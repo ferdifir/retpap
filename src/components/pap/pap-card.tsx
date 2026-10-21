@@ -87,9 +87,13 @@ export function PapCard({
     const element = photoRef.current;
     if (!element || box.width === 0 || box.height === 0) return;
 
+    // The card may be mid-flip, so its rect is scaled by the CSS transform.
+    // Normalise back to layout coordinates before comparing with the box.
     const rect = element.getBoundingClientRect();
-    const containerX = clientX - rect.left;
-    const containerY = clientY - rect.top;
+    const scaleX = element.clientWidth > 0 ? rect.width / element.clientWidth : 1;
+    const scaleY = element.clientHeight > 0 ? rect.height / element.clientHeight : 1;
+    const containerX = (clientX - rect.left) / scaleX;
+    const containerY = (clientY - rect.top) / scaleY;
     const x = (containerX - box.left) / box.width;
     const y = (containerY - box.top) / box.height;
 

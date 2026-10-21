@@ -9,6 +9,10 @@ export type ImageBox = { left: number; top: number; width: number; height: numbe
  * Measures where `object-contain` actually paints the photo inside its
  * container. Reaction coordinates are relative to this box, so a point on the
  * photo lands on the same spot regardless of the viewport aspect ratio.
+ *
+ * Uses layout metrics (clientWidth/clientHeight), not getBoundingClientRect:
+ * inactive cards are scaled and translated by CSS, and a rect measured before
+ * a card becomes active would be both stale and distorted.
  */
 export function useImageBox(
   ref: RefObject<HTMLElement | null>,
@@ -22,14 +26,17 @@ export function useImageBox(
     if (!element || imageWidth <= 0 || imageHeight <= 0) return;
 
     const measure = () => {
-      const rect = element.getBoundingClientRect();
-      const scale = Math.min(rect.width / imageWidth, rect.height / imageHeight);
+      const frameWidth = element.clientWidth;
+      const frameHeight = element.clientHeight;
+      if (frameWidth === 0 || frameHeight === 0) return;
+
+      const scale = Math.min(frameWidth / imageWidth, frameHeight / imageHeight);
       const width = imageWidth * scale;
       const height = imageHeight * scale;
 
       setBox({
-        left: (rect.width - width) / 2,
-        top: (rect.height - height) / 2,
+        left: (frameWidth - width) / 2,
+        top: (frameHeight - height) / 2,
         width,
         height,
       });
