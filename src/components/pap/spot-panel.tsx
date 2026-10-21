@@ -234,9 +234,13 @@ function CommentCarousel({
   onSubmit: (body: string) => void;
 }) {
   const mine = comments.some((comment) => comment.mine);
-  const slides: ("form" | FeedComment)[] = mine ? comments : ["form", ...comments];
+  // Newest first, always: the deck must not depend on the server's order.
+  const ordered = [...comments].sort((a, b) => b.id - a.id);
+  const slides: ("form" | FeedComment)[] = mine ? ordered : ["form", ...ordered];
 
-  const [index, setIndex] = useState(0);
+  // Open on the newest comment, not on the composer: the form stays one swipe
+  // to the right, the thread reads newest to oldest.
+  const [index, setIndex] = useState(slides.length > 1 ? 1 : 0);
   const [drag, setDrag] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [height, setHeight] = useState<number | null>(null);
