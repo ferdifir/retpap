@@ -5,62 +5,81 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mockup komentar — Rate PAP</title>
 <style>
-  :root { --cyan:#22d3ee; --line:rgba(148,163,184,.22); }
+  :root { --cyan:#22d3ee; --amber:#fbbf24; --line:rgba(148,163,184,.22); }
   * { box-sizing:border-box; }
   html,body { margin:0; background:#070b14; color:#e2e8f0; font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { display:grid; grid-template-columns:minmax(0,420px) minmax(0,360px); gap:32px; padding:32px; align-items:start; justify-content:center; }
-  @media (max-width:900px) { .wrap { grid-template-columns:minmax(0,420px); } }
+  .wrap { display:grid; grid-template-columns:minmax(0,420px) minmax(0,380px); gap:32px; padding:32px; align-items:start; justify-content:center; }
+  @media (max-width:920px) { .wrap { grid-template-columns:minmax(0,420px); } }
   h1 { font-size:16px; margin:0 0 4px; }
-  p.lead { margin:0 0 18px; font-size:12px; line-height:1.6; color:#94a3b8; }
+  p.lead { margin:0 0 16px; font-size:12px; line-height:1.6; color:#94a3b8; }
 
-  /* ---- phone ---- */
   .phone { position:relative; width:390px; height:844px; border-radius:34px; overflow:hidden;
     background:#0b1220; border:1px solid #1e293b; box-shadow:0 30px 80px rgba(0,0,0,.6); display:flex; flex-direction:column; }
   .topbar { display:flex; align-items:center; justify-content:space-between; padding:14px 16px 10px; }
   .score { display:flex; align-items:baseline; gap:6px; }
-  .score b { color:#fbbf24; font-size:17px; }
+  .score b { color:var(--amber); font-size:17px; }
   .score span { font-size:11px; color:#94a3b8; }
   .iconbtn { width:30px; height:30px; border-radius:50%; border:1px solid var(--line); background:rgba(30,41,59,.6); display:grid; place-items:center; color:#cbd5e1; font-size:13px; }
   .photobox { position:relative; flex:1; margin:0 10px; border-radius:22px; overflow:hidden; border:1px solid #1e293b; background:#020617; }
   .photobox img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
   .shade { position:absolute; inset:0; pointer-events:none; transition:background .25s; }
   .tapzone { position:absolute; inset:0; cursor:crosshair; }
+  .layer { position:absolute; inset:0; pointer-events:none; }
+  .layer > * { pointer-events:auto; }
 
-  /* ---- pins ---- */
-  .pin { position:absolute; transform:translate(-50%,-50%); width:30px; height:30px; border-radius:50%;
-    display:grid; place-items:center; font-size:11px; font-weight:800; color:#fff; cursor:pointer;
-    border:2px solid #0b1220; background:linear-gradient(135deg,#0ea5e9,#2563eb);
-    box-shadow:0 4px 14px rgba(2,6,23,.6); transition:transform .18s; }
-  .pin:hover { transform:translate(-50%,-50%) scale(1.12); }
-  .pin.cluster { background:linear-gradient(135deg,#f59e0b,#ea580c); }
-  .pin .n { position:absolute; top:-6px; right:-6px; min-width:16px; height:16px; padding:0 4px; border-radius:9px;
-    background:#22d3ee; color:#04222b; font-size:9px; font-weight:900; display:grid; place-items:center; border:1.5px solid #0b1220; }
-  .pin .dot { width:6px; height:6px; border-radius:50%; background:#67e8f9; position:absolute; bottom:-9px; opacity:.9; }
+  /* ---- marker ---- */
+  .marker { position:absolute; transform:translate(-50%,-50%); width:34px; height:34px; border-radius:50%;
+    display:grid; place-items:center; font-size:15px; line-height:1; cursor:pointer; border:2px solid #0b1220;
+    background:linear-gradient(135deg,#0ea5e9,#2563eb); box-shadow:0 4px 14px rgba(2,6,23,.6);
+    transition:transform .18s, box-shadow .18s; }
+  .marker:hover { transform:translate(-50%,-50%) scale(1.1); }
+  .marker.open { transform:translate(-50%,-50%) scale(1.14); box-shadow:0 0 0 4px rgba(34,211,238,.25),0 8px 22px rgba(2,6,23,.7); }
+  .marker.comments-only { background:linear-gradient(135deg,#0ea5e9,#0369a1); }
+  .marker.emoji-only { background:linear-gradient(135deg,#f59e0b,#b45309); }
+  .badge { position:absolute; min-width:16px; height:16px; padding:0 4px; border-radius:9px;
+    font-size:9px; font-weight:900; display:grid; place-items:center; border:1.5px solid #0b1220; }
+  .badge.c { top:-5px; right:-6px; background:var(--cyan); color:#04222b; }
+  .badge.e { bottom:-5px; right:-6px; background:var(--amber); color:#251a00; }
+  .stem { position:absolute; left:50%; width:1px; background:linear-gradient(to top,rgba(34,211,238,.7),rgba(34,211,238,0)); transform:translateX(-50%); }
 
-  /* ---- bubbles ---- */
-  .bubble { position:absolute; width:232px; transform:translateX(-50%); background:rgba(15,23,42,.97);
-    border:1px solid rgba(34,211,238,.45); border-radius:14px; padding:10px 11px; box-shadow:0 16px 40px rgba(0,0,0,.55); }
-  .bubble .who { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
-  .bubble .av { width:18px; height:18px; border-radius:50%; background:linear-gradient(135deg,#0ea5e9,#2563eb); display:grid; place-items:center; font-size:9px; font-weight:800; }
-  .bubble .name { font-size:10px; font-weight:700; color:#e2e8f0; }
-  .bubble .time { font-size:9px; color:#64748b; margin-left:auto; }
-  .bubble .txt { font-size:11.5px; line-height:1.5; color:#cbd5e1; }
-  .bubble .foot { display:flex; align-items:center; gap:8px; margin-top:8px; padding-top:7px; border-top:1px solid rgba(148,163,184,.14); font-size:9.5px; color:#94a3b8; }
-  .bubble .foot b { color:#22d3ee; }
-  .bubble .tail { position:absolute; width:11px; height:11px; background:rgba(15,23,42,.97); border-right:1px solid rgba(34,211,238,.45); border-bottom:1px solid rgba(34,211,238,.45); transform:rotate(45deg); }
-  .bubble.above .tail { bottom:-6px; left:50%; margin-left:-5px; }
-  .bubble.below .tail { top:-6px; left:50%; margin-left:-5px; transform:rotate(225deg); }
-  .counter { display:flex; align-items:center; gap:4px; }
-  .dots { display:flex; gap:3px; }
-  .dots i { width:4px; height:4px; border-radius:50%; background:#334155; }
-  .dots i.on { background:#22d3ee; }
+  /* ---- chooser chips (map-style spiderfy) ---- */
+  .chips { position:absolute; transform:translateX(-50%); display:flex; gap:8px; align-items:center; }
+  .chip { display:flex; align-items:center; gap:6px; padding:7px 11px; border-radius:999px; cursor:pointer;
+    font-size:11px; font-weight:800; border:1px solid transparent; box-shadow:0 10px 26px rgba(0,0,0,.55);
+    animation:pop .18s ease-out both; }
+  .chip.emoji { background:linear-gradient(135deg,#f59e0b,#d97706); color:#221500; border-color:#fbbf24; }
+  .chip.comment { background:linear-gradient(135deg,#22d3ee,#0ea5e9); color:#04222b; border-color:#67e8f9; }
+  .chip.off { filter:saturate(.55) brightness(.85); }
+  @keyframes pop { from { opacity:0; transform:translateY(6px) scale(.9); } to { opacity:1; transform:none; } }
 
-  /* ---- fan ---- */
-  .fan { position:absolute; transform:translateX(-50%); }
-  .fan .card { position:absolute; left:0; bottom:0; width:212px; background:rgba(15,23,42,.97);
-    border:1px solid rgba(34,211,238,.35); border-radius:12px; padding:9px 10px; box-shadow:0 12px 30px rgba(0,0,0,.5); }
-  .fan .card .txt { font-size:11px; line-height:1.45; color:#cbd5e1; }
-  .fan .card .name { font-size:9px; font-weight:700; color:#7dd3fc; margin-bottom:3px; }
+  /* ---- panels ---- */
+  .panelbox { position:absolute; width:236px; transform:translateX(-50%); background:rgba(15,23,42,.97);
+    border-radius:14px; padding:10px 11px; box-shadow:0 16px 40px rgba(0,0,0,.6); }
+  .panelbox.comments { border:1px solid rgba(34,211,238,.5); }
+  .panelbox.emoji { border:1px solid rgba(251,191,36,.5); }
+  .tail { position:absolute; width:11px; height:11px; background:rgba(15,23,42,.97); transform:rotate(45deg); }
+  .panelbox.above .tail { bottom:-6px; left:50%; margin-left:-5px; }
+  .panelbox.below .tail { top:-6px; left:50%; margin-left:-5px; transform:rotate(225deg); }
+  .panelbox.comments .tail { border-right:1px solid rgba(34,211,238,.5); border-bottom:1px solid rgba(34,211,238,.5); }
+  .panelbox.emoji .tail { border-right:1px solid rgba(251,191,36,.5); border-bottom:1px solid rgba(251,191,36,.5); }
+  .who { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+  .av { width:18px; height:18px; border-radius:50%; background:linear-gradient(135deg,#0ea5e9,#2563eb); display:grid; place-items:center; font-size:9px; font-weight:800; }
+  .name { font-size:10px; font-weight:700; }
+  .time { font-size:9px; color:#64748b; margin-left:auto; }
+  .txt { font-size:11.5px; line-height:1.5; color:#cbd5e1; }
+  .divider { height:1px; background:rgba(148,163,184,.16); margin:8px 0; }
+  .foot { display:flex; align-items:center; gap:8px; font-size:9.5px; color:#94a3b8; }
+  .foot b { color:var(--cyan); }
+  .reply { display:flex; gap:6px; margin-top:8px; }
+  .reply input { flex:1; background:rgba(2,6,23,.7); border:1px solid rgba(148,163,184,.2); border-radius:9px; padding:6px 8px; color:#e2e8f0; font-size:11px; outline:none; }
+  .reply input::placeholder { color:#64748b; }
+  .reply button { border:0; border-radius:9px; padding:6px 10px; font-size:10px; font-weight:800; color:#04222b; background:linear-gradient(135deg,#22d3ee,#0ea5e9); cursor:pointer; }
+  .emojirow { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .echip { display:flex; align-items:center; gap:4px; border-radius:999px; padding:4px 8px; font-size:12px;
+    background:rgba(251,191,36,.12); border:1px solid rgba(251,191,36,.35); cursor:pointer; }
+  .echip b { font-size:9px; color:var(--amber); }
+  .echip.mine { border-color:#fbbf24; background:rgba(251,191,36,.25); }
+  .hint { font-size:9px; color:#64748b; margin-top:7px; line-height:1.5; }
 
   /* ---- composer ---- */
   .composer { position:absolute; width:250px; transform:translateX(-50%); background:rgba(15,23,42,.98);
@@ -69,320 +88,328 @@
   .composer input { flex:1; background:transparent; border:0; outline:none; color:#e2e8f0; font-size:11.5px; padding:4px 2px; }
   .composer input::placeholder { color:#64748b; }
   .composer button { border:0; border-radius:9px; padding:6px 10px; font-size:10px; font-weight:800; color:#04222b; background:linear-gradient(135deg,#22d3ee,#0ea5e9); cursor:pointer; }
-  .composer .hint { font-size:9px; color:#64748b; margin-top:4px; padding-left:2px; }
+  .composer .ghost { display:inline-block; margin-top:6px; font-size:9px; color:#64748b; }
 
-  /* ---- card footer ---- */
   .caption { margin:8px 10px 0; padding:8px 10px; border-radius:12px; background:rgba(30,41,59,.55); border:1px solid #1e293b; font-size:11px; text-align:center; color:#cbd5e1; }
   .nav { display:flex; gap:8px; padding:10px; }
   .nav div { flex:1; text-align:center; padding:9px 0; border-radius:12px; font-size:11px; font-weight:700; }
   .nav .prev { border:1px solid var(--line); color:#cbd5e1; background:rgba(30,41,59,.5); }
   .nav .next { background:linear-gradient(90deg,#06b6d4,#2563eb); color:#fff; }
 
-  /* ---- panel ---- */
-  .panel { border:1px solid #1e293b; border-radius:16px; padding:16px; background:rgba(15,23,42,.7); }
-  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
-  .tab { border:1px solid var(--line); background:transparent; color:#cbd5e1; font-size:11px; font-weight:700;
-    padding:7px 10px; border-radius:10px; cursor:pointer; }
-  .tab.on { background:#22d3ee; color:#04222b; border-color:#22d3ee; }
-  .note h2 { font-size:13px; margin:0 0 6px; }
-  .note p { font-size:11.5px; line-height:1.65; color:#94a3b8; margin:0 0 10px; }
-  .note ul { margin:0 0 12px; padding-left:16px; font-size:11.5px; line-height:1.7; color:#94a3b8; }
-  .note li b { color:#e2e8f0; }
-  .stress { display:flex; align-items:center; gap:8px; font-size:11px; color:#94a3b8; margin-bottom:14px; }
-  .stress button { border:1px solid var(--line); background:transparent; color:#cbd5e1; font-size:10.5px; padding:6px 10px; border-radius:9px; cursor:pointer; }
-  .stress button.on { background:#f59e0b; border-color:#f59e0b; color:#1c1200; font-weight:800; }
+  .side { border:1px solid #1e293b; border-radius:16px; padding:16px; background:rgba(15,23,42,.7); }
+  .side h2 { font-size:13px; margin:0 0 10px; }
+  .rule { display:flex; gap:10px; padding:9px 0; border-bottom:1px solid rgba(148,163,184,.12); }
+  .rule:last-of-type { border-bottom:0; }
+  .rule .k { flex:0 0 92px; font-size:10px; font-weight:800; color:var(--cyan); text-transform:uppercase; letter-spacing:.04em; }
+  .rule .v { font-size:11.5px; line-height:1.55; color:#94a3b8; }
+  .stress { margin-top:14px; display:flex; gap:8px; align-items:center; }
+  .stress button { border:1px solid var(--line); background:transparent; color:#cbd5e1; font-size:10.5px; padding:7px 10px; border-radius:9px; cursor:pointer; }
+  .stress button.on { background:var(--amber); border-color:var(--amber); color:#251a00; font-weight:800; }
+  .stress span { font-size:10px; color:#64748b; }
+  .legend { margin-top:16px; font-size:10.5px; line-height:1.7; color:#64748b; }
+  .legend b { color:#cbd5e1; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div>
-    <h1>Mockup komentar di atas foto</h1>
-    <p class="lead">Klik area foto untuk melihat composer. Klik pin untuk membuka komentar. Ganti varian di panel kanan.</p>
+    <h1>Komentar &amp; reaksi di satu titik</h1>
+    <p class="lead">Tap marker = mekar jadi dua pilihan. Tap area kosong = komentar baru di titik itu. Long-press = palette emoji.</p>
     <div class="phone">
       <div class="topbar">
-        <div class="score"><b id="avg">8.1</b><span>/ 10.0</span></div>
-        <div style="display:flex;gap:6px">
-          <div class="iconbtn">&#128065;</div>
-          <div class="iconbtn">&#8679;</div>
-          <div class="iconbtn">i</div>
-        </div>
+        <div class="score"><b>8.1</b><span>/ 10.0</span></div>
+        <div style="display:flex;gap:6px"><div class="iconbtn">&#128065;</div><div class="iconbtn">&#8679;</div><div class="iconbtn">i</div></div>
       </div>
       <div class="photobox" id="photobox">
         <img src="../public/foto.jpg" alt="foto">
         <div class="shade" id="shade"></div>
         <div class="tapzone" id="tapzone"></div>
-        <div id="pins"></div>
-        <div id="overlays"></div>
+        <div class="layer" id="layer"></div>
       </div>
       <div class="caption">Foto pertama untuk di-rate &#128248;</div>
       <div class="nav"><div class="prev">Previous</div><div class="next">Next PAP</div></div>
     </div>
   </div>
 
-  <div class="panel">
-    <div class="tabs">
-      <button class="tab on" data-variant="pin">A &middot; Pin + bubble</button>
-      <button class="tab" data-variant="fan">B &middot; Fan stack</button>
-      <button class="tab" data-variant="play">C &middot; Auto-play</button>
-    </div>
+  <div class="side">
+    <h2>Aturan yang disepakati</h2>
+    <div class="rule"><div class="k">Tap kosong</div><div class="v">Composer muncul di titik itu. Setelah kirim, pin baru lahir di situ.</div></div>
+    <div class="rule"><div class="k">Tap marker</div><div class="v">Mekar jadi dua chip: emoji dan komentar. Kalau titik itu hanya punya salah satu, langsung terbuka tanpa memilih.</div></div>
+    <div class="rule"><div class="k">Snap 4%</div><div class="v">Tap dalam radius 4% lebar foto dari marker yang ada masuk ke titik itu, bukan bikin pin baru yang menumpuk.</div></div>
+    <div class="rule"><div class="k">Long-press</div><div class="v">Palette emoji untuk titik itu. Emoji yang sudah dipakai ditandai aktif; tap lagi = hapus.</div></div>
+
     <div class="stress">
-      <button id="stressBtn">Uji padat: 24 komentar</button>
-      <span id="clusterInfo"></span>
+      <button id="stressBtn">Uji padat</button>
+      <span id="info"></span>
     </div>
-    <div class="note" id="note"></div>
+
+    <div class="legend">
+      <b>Data:</b> satu <i>spot</i> punya dua lapisan, emoji dan komentar. Marker menampilkan emoji utama + badge jumlah komentar (cyan) dan jumlah reaksi (amber).<br><br>
+      <b>Coba:</b> tap marker biru-oranye di kiri atas, lalu pilih salah satu chip. Tap marker biru saja (hanya komentar) untuk melihat jalur tanpa pemilihan.
+    </div>
   </div>
 </div>
 
 <script>
-var BASE = [
-  { x:0.30, y:0.22, n:"Raka", i:"R", t:"Cahayanya bagus banget di sini", at:"2m" },
-  { x:0.34, y:0.26, n:"Nadia", i:"N", t:"Setuju, golden hour-nya kena", at:"1m" },
-  { x:0.31, y:0.18, n:"Bima", i:"B", t:"Angle-nya bikin fotonya hidup", at:"5m" },
-  { x:0.68, y:0.55, n:"Sinta", i:"S", t:"Komposisinya rapi, suka", at:"8m" },
-  { x:0.66, y:0.60, n:"Dimas", i:"D", t:"Background-nya agak rame", at:"9m" },
-  { x:0.22, y:0.72, n:"Ayu", i:"A", t:"Pose-nya natural", at:"12m" },
-  { x:0.74, y:0.32, n:"Tegar", i:"T", t:"Warnanya hangat, enak dilihat", at:"15m" }
-];
-var EXTRA = [
-  { x:0.28, y:0.20, n:"Iqbal", i:"I", t:"Frame-nya pas", at:"16m" },
-  { x:0.35, y:0.23, n:"Wulan", i:"W", t:"Crop-nya bisa lebih ketat", at:"18m" },
-  { x:0.30, y:0.28, n:"Fajar", i:"F", t:"Edit warnanya mantap", at:"20m" },
-  { x:0.69, y:0.58, n:"Sari", i:"S", t:"Subjeknya jelas", at:"21m" },
-  { x:0.64, y:0.52, n:"Bayu", i:"B", t:"Shadow-nya lembut", at:"23m" },
-  { x:0.72, y:0.62, n:"Rani", i:"R", t:"Agak overexposed dikit", at:"25m" },
-  { x:0.20, y:0.70, n:"Yoga", i:"Y", t:"Momen-nya dapat", at:"27m" },
-  { x:0.24, y:0.76, n:"Lia", i:"L", t:"Ekspresinya bagus", at:"30m" },
-  { x:0.76, y:0.28, n:"Adi", i:"A", t:"Detailnya tajam", at:"33m" },
-  { x:0.78, y:0.35, n:"Mira", i:"M", t:"Bokeh-nya halus", at:"35m" },
-  { x:0.40, y:0.80, n:"Dewi", i:"D", t:"Suka komposisi diagonal", at:"38m" }
+var SPOTS = [
+  { id:1, x:0.31, y:0.20, mine:"🔥", emoji:{ "🔥":3, "💯":1 }, comments:[
+    { n:"Raka", i:"R", t:"Cahayanya bagus banget di sini", at:"2m" },
+    { n:"Nadia", i:"N", t:"Setuju, golden hour-nya kena", at:"1m" },
+    { n:"Bima", i:"B", t:"Angle-nya bikin fotonya hidup", at:"5m" }
+  ] },
+  { id:2, x:0.69, y:0.56, mine:null, emoji:{ "❤️":2 }, comments:[
+    { n:"Sinta", i:"S", t:"Komposisinya rapi, suka", at:"8m" },
+    { n:"Dimas", i:"D", t:"Background-nya agak rame", at:"9m" }
+  ] },
+  { id:3, x:0.24, y:0.72, mine:null, emoji:{}, comments:[
+    { n:"Ayu", i:"A", t:"Pose-nya natural", at:"12m" }
+  ] },
+  { id:4, x:0.77, y:0.33, mine:"👓", emoji:{ "👓":1, "😂":2 }, comments:[] }
 ];
 
-var state = { variant:"pin", active:-1, composer:null, playing:false, stress:false, timer:null, playIndex:0 };
+var PALETTE = ["🔥","👓","💯","😂","🎯","❤️"];
+
+var state = { open:null, panel:null, composer:null, stress:false };
 var photo = document.getElementById("photobox");
-var pinsEl = document.getElementById("pins");
-var overlaysEl = document.getElementById("overlays");
-var shadeEl = document.getElementById("shade");
+var layer = document.getElementById("layer");
+var shade = document.getElementById("shade");
 
-function data() { return state.stress ? BASE.concat(EXTRA) : BASE; }
-
-function clusters() {
-  var items = data();
-  var out = [];
-  items.forEach(function (c) {
-    for (var i = 0; i < out.length; i++) {
-      var g = out[i];
-      var dx = g.x - c.x, dy = (g.y - c.y) * 1.35;
-      if (Math.sqrt(dx * dx + dy * dy) < 0.11) { g.items.push(c); g.x = (g.x * (g.items.length - 1) + c.x) / g.items.length; g.y = (g.y * (g.items.length - 1) + c.y) / g.items.length; return; }
-    }
-    out.push({ x:c.x, y:c.y, items:[c] });
+function spots() {
+  if (!state.stress) return SPOTS;
+  var extra = SPOTS.map(function (s, i) {
+    return { id:100 + i, x:Math.min(0.92, s.x + 0.03), y:Math.min(0.94, s.y + 0.02), mine:s.mine,
+      emoji:Object.assign({}, s.emoji), comments:s.comments.slice() };
   });
-  return out;
+  return SPOTS.concat(extra);
 }
 
 function pxX(x) { return Math.round(x * photo.clientWidth); }
 function pxY(y) { return Math.round(y * photo.clientHeight); }
+function clampX(x) { var half = 128; return Math.max(half, Math.min(photo.clientWidth - half, pxX(x))); }
 
-function clampLeft(x) {
-  var w = 232, half = w / 2 + 6;
-  var cx = pxX(x);
-  return Math.max(half, Math.min(photo.clientWidth - half, cx));
+function totals(spot) {
+  var e = 0;
+  Object.keys(spot.emoji).forEach(function (k) { e += spot.emoji[k]; });
+  return { e:e, c:spot.comments.length };
 }
 
 function render() {
-  pinsEl.innerHTML = "";
-  overlaysEl.innerHTML = "";
-  shadeEl.style.background = "none";
-  if (state.variant === "play") { renderPlay(); return; }
+  layer.innerHTML = "";
+  shade.style.background = "none";
 
-  var groups = clusters();
-  var activeGroup = state.active >= 0 ? groups[state.active] : null;
+  var list = spots();
+  var active = null;
+  list.forEach(function (s) { if (s.id === state.open) active = s; });
 
-  if (activeGroup) {
-    var cx = pxX(activeGroup.x), cy = pxY(activeGroup.y);
-    shadeEl.style.background = "radial-gradient(circle 190px at " + cx + "px " + cy + "px, rgba(2,6,23,0) 0%, rgba(2,6,23,.55) 62%, rgba(2,6,23,.72) 100%)";
+  if (active) {
+    shade.style.background = "radial-gradient(circle 200px at " + pxX(active.x) + "px " + pxY(active.y) + "px, rgba(2,6,23,0) 0%, rgba(2,6,23,.55) 62%, rgba(2,6,23,.74) 100%)";
   }
 
-  groups.forEach(function (g, index) {
-    var pin = document.createElement("div");
-    pin.className = "pin" + (g.items.length > 1 ? " cluster" : "");
-    pin.style.left = (g.x * 100) + "%";
-    pin.style.top = (g.y * 100) + "%";
-    pin.innerHTML = g.items[0].i + (g.items.length > 1 ? "<span class=\"n\">" + g.items.length + "</span>" : "<span class=\"dot\"></span>");
-    pin.onclick = function (e) { e.stopPropagation(); state.active = index; state.composer = null; render(); };
-    pinsEl.appendChild(pin);
+  list.forEach(function (spot) {
+    var t = totals(spot);
+    var m = document.createElement("div");
+    var both = t.e > 0 && t.c > 0;
+    m.className = "marker" + (both ? "" : (t.c > 0 ? " comments-only" : " emoji-only")) + (state.open === spot.id ? " open" : "");
+    m.style.left = (spot.x * 100) + "%";
+    m.style.top = (spot.y * 100) + "%";
+    m.innerHTML = (spot.mine || (t.c > 0 ? "💬" : "🙂")) +
+      (t.c > 0 ? "<span class=\"badge c\">" + t.c + "</span>" : "") +
+      (t.e > 0 ? "<span class=\"badge e\">" + t.e + "</span>" : "");
+    m.onclick = function (e) { e.stopPropagation(); onMarker(spot); };
+    layer.appendChild(m);
   });
 
-  if (activeGroup) renderBubble(activeGroup);
+  if (active) renderMenu(active);
   if (state.composer) renderComposer();
 }
 
-function renderBubble(g) {
-  var first = g.items[0];
-  var x = clampLeft(g.x);
-  var y = pxY(g.y);
-  var above = g.y > 0.32;
+function onMarker(spot) {
+  var t = totals(spot);
+  var both = t.e > 0 && t.c > 0;
 
-  if (state.variant === "fan") {
-    var fan = document.createElement("div");
-    fan.className = "fan";
-    fan.style.left = x + "px";
-    fan.style.top = (above ? y - 10 : y + 44) + "px";
-    fan.style.transform = above ? "translate(-50%,-100%)" : "translate(-50%,0)";
-    var shown = g.items.slice(0, 3);
-    shown.forEach(function (c, i) {
-      var card = document.createElement("div");
-      card.className = "card";
-      var depth = shown.length - 1 - i;
-      card.style.transform = "translate(" + (depth * 7) + "px," + (-depth * 9) + "px) rotate(" + (depth * -2.4) + "deg)";
-      card.style.zIndex = String(i + 1);
-      card.style.bottom = "0";
-      card.innerHTML = "<div class=\"name\">" + c.n + "</div><div class=\"txt\">" + c.t + "</div>";
-      fan.appendChild(card);
-    });
-    if (g.items.length > 3) {
-      var more = document.createElement("div");
-      more.className = "card";
-      more.style.transform = "translate(" + (g.items.length > 3 ? 0 : 0) + "px,0)";
-      more.style.zIndex = "0";
-      more.style.opacity = ".7";
-      more.style.textAlign = "center";
-      more.innerHTML = "<div class=\"txt\">+" + (g.items.length - 3) + " komentar lain</div>";
-      fan.appendChild(more);
-    }
-    overlaysEl.appendChild(fan);
+  if (state.open === spot.id && state.panel === null) { state.open = null; render(); return; }
+
+  if (both) { state.open = spot.id; state.panel = null; state.composer = null; render(); return; }
+
+  state.open = spot.id;
+  state.panel = t.e > 0 ? "emoji" : "comments";
+  state.composer = null;
+  render();
+}
+
+function renderMenu(spot) {
+  var t = totals(spot);
+  var x = clampX(spot.x);
+  var y = pxY(spot.y);
+  var above = spot.y > 0.36;
+
+  var stem = document.createElement("div");
+  stem.className = "stem";
+  stem.style.left = x + "px";
+  stem.style.top = above ? (y - 34) + "px" : (y + 34) + "px";
+  stem.style.height = "0";
+  layer.appendChild(stem);
+
+  if (t.e > 0 && t.c > 0 && state.panel === null) {
+    var chips = document.createElement("div");
+    chips.className = "chips";
+    chips.style.left = x + "px";
+    chips.style.top = above ? (y - 30) + "px" : (y + 30) + "px";
+    chips.style.transform = above ? "translate(-50%,-100%)" : "translate(-50%,0)";
+
+    var ce = document.createElement("div");
+    ce.className = "chip emoji";
+    ce.innerHTML = "🔥 " + t.e + " reaksi";
+    ce.onclick = function (ev) { ev.stopPropagation(); state.panel = "emoji"; render(); };
+
+    var cc = document.createElement("div");
+    cc.className = "chip comment";
+    cc.innerHTML = "💬 " + t.c + " komentar";
+    cc.onclick = function (ev) { ev.stopPropagation(); state.panel = "comments"; render(); };
+
+    chips.appendChild(ce);
+    chips.appendChild(cc);
+    layer.appendChild(chips);
     return;
   }
 
-  var bubble = document.createElement("div");
-  bubble.className = "bubble " + (above ? "above" : "below");
-  bubble.style.left = x + "px";
-  bubble.style.top = above ? (y - 26) + "px" : (y + 26) + "px";
-  bubble.style.transform = above ? "translate(-50%,-100%)" : "translate(-50%,0)";
+  if (state.panel === "emoji") renderEmojiPanel(spot, x, y, above);
+  if (state.panel === "comments") renderCommentPanel(spot, x, y, above);
+}
 
-  var dots = "";
-  for (var i = 0; i < Math.min(g.items.length, 5); i++) dots += "<i class=\"" + (i === 0 ? "on" : "") + "\"></i>";
+function panelEl(kind, x, y, above) {
+  var box = document.createElement("div");
+  box.className = "panelbox " + kind + " " + (above ? "above" : "below");
+  box.style.left = x + "px";
+  box.style.top = above ? (y - 34) + "px" : (y + 34) + "px";
+  box.style.transform = above ? "translate(-50%,-100%)" : "translate(-50%,0)";
+  return box;
+}
 
-  bubble.innerHTML =
+function renderEmojiPanel(spot, x, y, above) {
+  var box = panelEl("emoji", x, y, above);
+  var t = totals(spot);
+  var chips = "";
+  Object.keys(spot.emoji).forEach(function (e) {
+    chips += "<span class=\"echip" + (spot.mine === e ? " mine" : "") + "\">" + e + " <b>" + spot.emoji[e] + "</b></span>";
+  });
+  var palette = PALETTE.filter(function (e) { return !spot.emoji[e]; }).map(function (e) {
+    return "<span class=\"echip\">" + e + "</span>";
+  }).join("");
+
+  box.innerHTML =
+    "<div class=\"emojirow\">" + chips + "</div>" +
+    (palette ? "<div class=\"divider\"></div><div class=\"emojirow\">" + palette + "</div>" : "") +
+    "<div class=\"hint\">" + t.e + " reaksi di titik ini. Emoji yang aktif ditandai; tap lagi untuk menghapus.</div>" +
+    "<div class=\"tail\"></div>";
+  layer.appendChild(box);
+}
+
+function renderCommentPanel(spot, x, y, above) {
+  var box = panelEl("comments", x, y, above);
+  var first = spot.comments[0];
+  var n = spot.comments.length;
+
+  box.innerHTML =
     "<div class=\"who\"><span class=\"av\">" + first.i + "</span><span class=\"name\">" + first.n + "</span><span class=\"time\">" + first.at + "</span></div>" +
     "<div class=\"txt\">" + first.t + "</div>" +
-    "<div class=\"foot\">" +
-      (g.items.length > 1 ? "<b>" + g.items.length + " komentar</b><span>&middot;</span><span>geser untuk lihat</span>" : "<span>1 komentar</span>") +
-      "<span style=\"margin-left:auto\" class=\"counter\"><span class=\"dots\">" + dots + "</span></span>" +
-    "</div>" +
+    "<div class=\"divider\"></div>" +
+    "<div class=\"foot\"><b>" + n + " komentar</b><span>·</span><span>lihat semua</span></div>" +
+    "<div class=\"reply\"><input placeholder=\"Tulis balasan di titik ini…\"><button>Kirim</button></div>" +
     "<div class=\"tail\"></div>";
-  overlaysEl.appendChild(bubble);
+
+  var input = box.querySelector("input");
+  input.onkeydown = function (e) { if (e.key === "Enter") addComment(spot, input.value); };
+  box.querySelector("button").onclick = function () { addComment(spot, input.value); };
+  layer.appendChild(box);
+}
+
+function addComment(spot, value) {
+  var text = (value || "").trim();
+  if (!text) return;
+  spot.comments.unshift({ n:"Kamu", i:"K", t:text, at:"baru" });
+  render();
 }
 
 function renderComposer() {
   var c = state.composer;
-  var x = clampLeft(c.x);
+  var x = clampX(c.x);
   var y = pxY(c.y);
-  var above = c.y > 0.32;
+  var above = c.y > 0.36;
   var box = document.createElement("div");
   box.className = "composer";
   box.style.left = x + "px";
   box.style.top = above ? (y - 20) + "px" : (y + 20) + "px";
   box.style.transform = above ? "translate(-50%,-100%)" : "translate(-50%,0)";
   box.innerHTML =
-    "<div class=\"row\"><input id=\"cinput\" placeholder=\"Tulis komentar di titik ini...\" autocomplete=\"off\"><button>Kirim</button></div>" +
-    "<div class=\"hint\">Komentar menempel di titik ini, bukan di bawah foto.</div>";
-  overlaysEl.appendChild(box);
+    "<div class=\"row\"><input id=\"cinput\" placeholder=\"Komentar di titik ini…\" autocomplete=\"off\"><button>Kirim</button></div>" +
+    "<span class=\"ghost\">Menempel di titik ini, bukan di bawah foto.</span>";
+  layer.appendChild(box);
   var input = document.getElementById("cinput");
   setTimeout(function () { input.focus(); }, 30);
-  input.onkeydown = function (e) { if (e.key === "Enter") state.composer = null, render(); };
-  box.querySelector("button").onclick = function () { state.composer = null; render(); };
+  input.onkeydown = function (e) { if (e.key === "Enter") createSpot(input.value); };
+  box.querySelector("button").onclick = function () { createSpot(input.value); };
 }
 
-function renderPlay() {
-  var items = data();
-  var c = items[state.playIndex % items.length];
-  var x = clampLeft(c.x);
-  var y = pxY(c.y);
-  var above = c.y > 0.32;
-  shadeEl.style.background = "radial-gradient(circle 190px at " + pxX(c.x) + "px " + pxY(c.y) + "px, rgba(2,6,23,0) 0%, rgba(2,6,23,.55) 62%, rgba(2,6,23,.72) 100%)";
-
-  var pin = document.createElement("div");
-  pin.className = "pin";
-  pin.style.left = (c.x * 100) + "%";
-  pin.style.top = (c.y * 100) + "%";
-  pin.innerHTML = c.i + "<span class=\"dot\"></span>";
-  pinsEl.appendChild(pin);
-
-  var bubble = document.createElement("div");
-  bubble.className = "bubble " + (above ? "above" : "below");
-  bubble.style.left = x + "px";
-  bubble.style.top = above ? (y - 26) + "px" : (y + 26) + "px";
-  bubble.style.transform = above ? "translate(-50%,-100%)" : "translate(-50%,0)";
-  bubble.innerHTML =
-    "<div class=\"who\"><span class=\"av\">" + c.i + "</span><span class=\"name\">" + c.n + "</span><span class=\"time\">" + c.at + "</span></div>" +
-    "<div class=\"txt\">" + c.t + "</div>" +
-    "<div class=\"foot\"><span>Putar otomatis</span><b style=\"margin-left:auto\">" + ((state.playIndex % items.length) + 1) + "/" + items.length + "</b></div>" +
-    "<div class=\"tail\"></div>";
-  overlaysEl.appendChild(bubble);
-}
-
-function setVariant(v) {
-  state.variant = v;
-  state.active = -1;
+function createSpot(value) {
+  var text = (value || "").trim();
+  if (!text) return;
+  var c = state.composer;
+  SPOTS.push({ id:Date.now(), x:c.x, y:c.y, mine:null, emoji:{}, comments:[{ n:"Kamu", i:"K", t:text, at:"baru" }] });
   state.composer = null;
-  if (state.timer) { clearInterval(state.timer); state.timer = null; }
-  document.querySelectorAll(".tab").forEach(function (b) { b.classList.toggle("on", b.dataset.variant === v); });
-  if (v === "play") {
-    state.playIndex = 0;
-    render();
-    state.timer = setInterval(function () { state.playIndex++; render(); }, 2200);
-  } else {
-    render();
-  }
-  updateNote();
-}
-
-var NOTES = {
-  pin: "<h2>A &middot; Pin + satu bubble</h2><p>Satu pin per titik. Pin yang berdekatan digabung jadi satu pin oranye dengan angka. Hanya satu thread terbuka, jadi mustahil tumpang tindih.</p><ul><li><b>Kuat:</b> tetap terbaca walau 50 komentar, dan pin bisa diklik tanpa salah sasaran.</li><li><b>Lemah:</b> terasa seperti anotasi peta kalau pin terlalu banyak.</li><li><b>Detail:</b> spotlight meredupkan sekeliling pin aktif; bubble flip ke bawah kalau pin di area atas.</li></ul>",
-  fan: "<h2>B &middot; Fan stack</h2><p>Pin dengan banyak komentar membuka tumpukan kartu miring. Yang teratas terbaca, sisanya mengintip.</p><ul><li><b>Kuat:</b> langsung terasa ada percakapan, bukan sekadar angka.</li><li><b>Lemah:</b> maksimal 3 kartu terbaca; lebih dari itu tetap butuh daftar.</li><li><b>Detail:</b> kedalaman kartu dipakai sebagai isyarat jumlah, bukan warna.</li></ul>",
-  play: "<h2>C &middot; Auto-play</h2><p>Komentar diputar otomatis satu per satu, bubble melompat mengikuti titiknya, dengan counter posisi.</p><ul><li><b>Kuat:</b> paling hidup untuk menikmati komentar orang lain, seperti story.</li><li><b>Lemah:</b> buruk untuk membaca panjang dan tidak bisa dipakai sambil menulis.</li><li><b>Detail:</b> cocok sebagai mode tambahan (tombol play), bukan pengganti tampilan utama.</li></ul>"
-};
-
-function updateNote() {
-  var g = clusters();
-  var biggest = g.reduce(function (m, x) { return x.items.length > m ? x.items.length : m; }, 0);
-  document.getElementById("clusterInfo").textContent = data().length + " komentar / " + g.length + " pin, terbesar " + biggest;
-  document.getElementById("note").innerHTML = NOTES[state.variant];
+  state.open = SPOTS[SPOTS.length - 1].id;
+  state.panel = "comments";
+  render();
 }
 
 document.getElementById("tapzone").onclick = function (e) {
-  if (state.variant === "play") return;
   var r = photo.getBoundingClientRect();
-  state.active = -1;
-  state.composer = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+  var x = (e.clientX - r.left) / r.width;
+  var y = (e.clientY - r.top) / r.height;
+
+  var nearest = null;
+  var best = 9;
+  spots().forEach(function (s) {
+    var dx = s.x - x;
+    var dy = (s.y - y) * 1.35;
+    var d = Math.sqrt(dx * dx + dy * dy);
+    if (d < best) { best = d; nearest = s; }
+  });
+
+  if (nearest && best < 0.04) { onMarker(nearest); return; }
+
+  state.open = null;
+  state.panel = null;
+  state.composer = { x:x, y:y };
   render();
 };
-
-document.querySelectorAll(".tab").forEach(function (b) {
-  b.onclick = function () { setVariant(b.dataset.variant); };
-});
 
 document.getElementById("stressBtn").onclick = function () {
   state.stress = !state.stress;
   this.classList.toggle("on", state.stress);
-  this.textContent = state.stress ? "Kembali ke 7 komentar" : "Uji padat: 24 komentar";
-  state.active = -1;
+  this.textContent = state.stress ? "Kembali normal" : "Uji padat";
+  state.open = null; state.panel = null;
   render();
-  updateNote();
+  updateInfo();
 };
+
+function updateInfo() {
+  var list = spots();
+  var both = 0, conly = 0, eonly = 0;
+  list.forEach(function (s) { var t = totals(s); if (t.e && t.c) both++; else if (t.c) conly++; else if (t.e) eonly++; });
+  document.getElementById("info").textContent = list.length + " marker: " + both + " gabungan, " + conly + " komentar, " + eonly + " emoji";
+}
 
 window.addEventListener("resize", function () { render(); });
 
-function openBiggest() {
-  var groups = clusters();
-  var best = 0;
-  groups.forEach(function (g, i) { if (g.items.length > groups[best].items.length) best = i; });
-  state.active = best;
-  render();
-}
+var qp = new URLSearchParams(location.search);
 
-setTimeout(openBiggest, 400);
-setVariant(new URLSearchParams(location.search).get("variant") || "pin");
+setTimeout(function () {
+  state.open = Number(qp.get("spot") || 1);
+  state.panel = qp.get("panel") || null;
+  render();
+  updateInfo();
+}, 400);
 </script>
 </body>
 </html>
