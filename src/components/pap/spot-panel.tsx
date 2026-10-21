@@ -26,20 +26,7 @@ type SpotPanelProps = {
 };
 
 const SHELL =
-  "spot-panel absolute z-30 w-[236px] -translate-x-1/2 rounded-2xl bg-slate-900/97 p-2.5 shadow-2xl shadow-slate-950/70";
-
-function CloseButton({ onClose }: { onClose: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClose}
-      aria-label="Tutup"
-      className="ml-auto grid size-5 shrink-0 place-items-center rounded-full border border-slate-600/60 text-[10px] text-slate-400 transition-colors hover:text-white"
-    >
-      ✕
-    </button>
-  );
-}
+  "spot-panel absolute z-30 w-[236px] rounded-2xl bg-slate-900/97 p-2.5 shadow-2xl shadow-slate-950/70";
 
 function CommentForm({
   placeholder,
@@ -109,7 +96,6 @@ export function SpotPanel({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  const hasEmoji = (spot?.total ?? 0) > 0;
   const commentCount = spot?.comments ?? 0;
   const accent =
     mode === "emoji" ? "border-amber-400/50" : mode === "comments" || mode === "composer" ? "border-cyan-400/50" : "border-slate-600/50";
@@ -150,18 +136,11 @@ export function SpotPanel({
       ) : null}
 
       {mode === "emoji" ? (
-        <EmojiBody spot={spot} onEmoji={onEmoji} onClose={onClose} />
+        <EmojiBody spot={spot} onEmoji={onEmoji} />
       ) : null}
 
       {mode === "comments" ? (
         <div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-bold tracking-wider text-cyan-300/80 uppercase">
-              {commentCount > 0 ? commentCount + " komentar" : "Belum ada komentar"}
-            </span>
-            <CloseButton onClose={onClose} />
-          </div>
-
           {comments === null ? (
             <p className="py-2 text-[10px] text-slate-500">Memuat…</p>
           ) : comments.length === 0 ? null : (
@@ -181,14 +160,7 @@ export function SpotPanel({
       ) : null}
 
       {mode === "composer" ? (
-        <div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-bold tracking-wider text-cyan-300/80 uppercase">Komentar baru</span>
-            <CloseButton onClose={onClose} />
-          </div>
-          <CommentForm placeholder="Tulis komentar di titik ini…" busy={busy} onSubmit={onComment} />
-          <p className="mt-1.5 text-[9px] text-slate-500">Menempel di titik ini, bukan di bawah foto.</p>
-        </div>
+        <CommentForm placeholder="Tulis komentar di titik ini…" busy={busy} onSubmit={onComment} />
       ) : null}
     </div>
   );
@@ -197,11 +169,9 @@ export function SpotPanel({
 function EmojiBody({
   spot,
   onEmoji,
-  onClose,
 }: {
   spot: FeedSpot | null;
   onEmoji: (emoji: string) => void;
-  onClose: () => void;
 }) {
   const existing = spot?.reactions ?? [];
   const mine = spot?.myEmoji ?? null;
@@ -212,15 +182,8 @@ function EmojiBody({
 
   return (
     <div>
-      <div className="flex items-center gap-1.5">
-        <span className="text-[9px] font-bold tracking-wider text-amber-300/80 uppercase">
-          {spot?.total ?? 0} reaksi
-        </span>
-        <CloseButton onClose={onClose} />
-      </div>
-
       {existing.length > 0 ? (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {existing.map((reaction) => {
             const isMine = mine === reaction.emoji;
             return (
@@ -246,7 +209,7 @@ function EmojiBody({
 
       {showPalette ? (
         <>
-          <div className="my-2 h-px bg-slate-700/40" />
+          {existing.length > 0 ? <div className="my-2 h-px bg-slate-700/40" /> : null}
           <div className="flex flex-wrap items-center gap-1">
             {palette.map((emoji) => (
               <button

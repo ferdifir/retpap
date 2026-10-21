@@ -306,8 +306,12 @@ export function PapCard({
     openPoint(at.x, at.y, "emoji");
   };
 
+  // Frame width without touching the ref during render: the image box is
+  // centred, so frame = left + width + left.
+  const frameWidth = box.width > 0 ? box.left * 2 + box.width : 360;
+  const panelHalf = 118 + 8;
   const panelX = interaction
-    ? Math.max(128, Math.min((photoRef.current?.clientWidth ?? 360) - 128, box.left + interaction.xPct * box.width))
+    ? Math.max(panelHalf, Math.min(frameWidth - panelHalf, box.left + interaction.xPct * box.width))
     : 0;
   const panelY = interaction ? box.top + interaction.yPct * box.height : 0;
 
