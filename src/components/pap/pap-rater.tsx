@@ -53,6 +53,8 @@ export function PapRater() {
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [popover, setPopover] = useState<PopoverAnchor | null>(null);
+  // Photos open clean: reactions stay hidden until the toggle is used.
+  const [reactionsVisible, setReactionsVisible] = useState(false);
 
   const ratingRef = useRef(DEFAULT_RATING);
   const isRatingRef = useRef(false);
@@ -318,6 +320,8 @@ export function PapRater() {
     if (!photo) return;
 
     setHasInteracted(true);
+    // Reacting means you want to see reactions; otherwise the tap looks ignored.
+    setReactionsVisible(true);
 
     try {
       const response = await fetch(`/api/photos/${photo.id}/reactions`, {
@@ -434,6 +438,8 @@ export function PapRater() {
       <AppHeader
         avgRating={activeItem?.rating.avg ?? 0}
         votes={activeItem?.rating.votes ?? 0}
+        reactionsVisible={reactionsVisible}
+        onToggleReactions={() => setReactionsVisible((visible) => !visible)}
         onInfoClick={() => setIsInfoOpen(true)}
       />
 
@@ -459,6 +465,7 @@ export function PapRater() {
               }
               priority={index === currentIndex}
               popover={index === currentIndex ? popover : null}
+              showReactions={reactionsVisible}
               onOpenPopover={setPopover}
               onClosePopover={() => setPopover(null)}
               rating={index === currentIndex ? rating : (item.rating.mine ?? DEFAULT_RATING)}

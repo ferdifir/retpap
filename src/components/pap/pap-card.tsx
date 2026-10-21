@@ -20,6 +20,8 @@ type PapCardProps = {
   item: FeedPhoto;
   position: CardPosition;
   popover: PopoverAnchor | null;
+  /** Hidden by default so a photo is seen without the reaction layer. */
+  showReactions: boolean;
   onOpenPopover: (anchor: PopoverAnchor) => void;
   onClosePopover: () => void;
   priority: boolean;
@@ -46,6 +48,7 @@ export function PapCard({
   item,
   position,
   popover,
+  showReactions,
   onOpenPopover,
   onClosePopover,
   priority,
@@ -202,31 +205,33 @@ export function PapCard({
           </div>
 
           {/* Pills live on the image box, not on the letterboxed container. */}
-          <div
-            className="pointer-events-none absolute z-20"
-            style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
-          >
-            {item.spots.map((spot) => (
-              <div
-                key={spot.id}
-                className="absolute -translate-x-1/2 -translate-y-1/2"
-                style={{
-                  left: `clamp(2.75rem, ${spot.x * 100}%, calc(100% - 2.75rem))`,
-                  top: `${spot.y * 100}%`,
-                }}
-              >
-                <ReactionPill
-                  spot={spot}
-                  onToggle={() => onReact(anchorFor(spot), spot.reactions[0].emoji)}
-                  onOpenPicker={() => {
-                    onOpenPopover(anchorFor(spot));
-                    onInteraction();
-                    haptic("impact");
+          {showReactions ? (
+            <div
+              className="pointer-events-none absolute z-20"
+              style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+            >
+              {item.spots.map((spot) => (
+                <div
+                  key={spot.id}
+                  className="absolute -translate-x-1/2 -translate-y-1/2"
+                  style={{
+                    left: `clamp(2.75rem, ${spot.x * 100}%, calc(100% - 2.75rem))`,
+                    top: `${spot.y * 100}%`,
                   }}
-                />
-              </div>
-            ))}
-          </div>
+                >
+                  <ReactionPill
+                    spot={spot}
+                    onToggle={() => onReact(anchorFor(spot), spot.reactions[0].emoji)}
+                    onOpenPicker={() => {
+                      onOpenPopover(anchorFor(spot));
+                      onInteraction();
+                      haptic("impact");
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           <RatingSlider
             value={rating}

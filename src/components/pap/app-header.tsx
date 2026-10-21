@@ -1,13 +1,21 @@
-import { InfoIcon } from "@/components/icons";
+import { EyeIcon, EyeOffIcon, InfoIcon } from "@/components/icons";
 import { formatVotes, getRatingTone } from "@/lib/rating";
 
 type AppHeaderProps = {
   avgRating: number;
   votes: number;
+  reactionsVisible: boolean;
+  onToggleReactions: () => void;
   onInfoClick: () => void;
 };
 
-export function AppHeader({ avgRating, votes, onInfoClick }: AppHeaderProps) {
+export function AppHeader({
+  avgRating,
+  votes,
+  reactionsVisible,
+  onToggleReactions,
+  onInfoClick,
+}: AppHeaderProps) {
   // Same tone the slider overlay uses, so the icon always matches the score.
   const tone = getRatingTone(avgRating);
 
@@ -31,14 +39,29 @@ export function AppHeader({ avgRating, votes, onInfoClick }: AppHeaderProps) {
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={onInfoClick}
-        aria-label="How to use this app"
-        className="glass-pill flex size-8 items-center justify-center rounded-full text-slate-300 transition-transform hover:text-white active:scale-95"
-      >
-        <InfoIcon className="size-3.5" />
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggleReactions}
+          aria-pressed={reactionsVisible}
+          aria-label={reactionsVisible ? "Sembunyikan reaksi emoji" : "Tampilkan reaksi emoji"}
+          className={
+            "glass-pill flex size-8 items-center justify-center rounded-full transition-transform active:scale-95 " +
+            (reactionsVisible ? "text-cyan-300" : "text-slate-400 hover:text-white")
+          }
+        >
+          {reactionsVisible ? <EyeIcon className="size-3.5" /> : <EyeOffIcon className="size-3.5" />}
+        </button>
+
+        <button
+          type="button"
+          onClick={onInfoClick}
+          aria-label="How to use this app"
+          className="glass-pill flex size-8 items-center justify-center rounded-full text-slate-300 transition-transform hover:text-white active:scale-95"
+        >
+          <InfoIcon className="size-3.5" />
+        </button>
+      </div>
     </header>
   );
 }
