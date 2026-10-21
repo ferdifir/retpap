@@ -210,9 +210,7 @@ function EmojiBody({
             )}
           >
             <span aria-hidden="true">{emoji}</span>
-            <span className={cn("text-[9px] font-black", count > 0 ? "text-amber-300" : "text-slate-500")}>
-              {count}
-            </span>
+            {count > 0 ? <span className="text-[9px] font-black text-amber-300">{count}</span> : null}
           </button>
         );
       })}
