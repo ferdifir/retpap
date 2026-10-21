@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   MAX_REACTIONS_PER_SPOT,
   findSpotAt,
@@ -44,7 +44,8 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
     .select()
     .from(photos)
     .where(eq(photos.isActive, true))
-    .orderBy(photos.id);
+    // Newest upload first: the deck opens on the most recent photo.
+    .orderBy(desc(photos.id));
 
   if (photoRows.length === 0) return [];
 
