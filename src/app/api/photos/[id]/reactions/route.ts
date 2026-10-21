@@ -31,6 +31,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   return Response.json({
+    spotId: outcome.spotId,
     removed: outcome.removed,
     spots: await getPhotoSpots(photoId, userId),
   });

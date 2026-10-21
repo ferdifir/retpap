@@ -7,6 +7,15 @@ export type FeedSpot = {
   myEmoji: string | null;
   /** Sorted by count desc, ties by insertion order. */
   reactions: { emoji: string; count: number }[];
+  /** Number of comments pinned to this spot. */
+  comments: number;
+};
+
+export type FeedComment = {
+  id: number;
+  body: string;
+  createdAt: string;
+  author: { firstName: string; username: string | null };
 };
 
 export type FeedPhoto = {

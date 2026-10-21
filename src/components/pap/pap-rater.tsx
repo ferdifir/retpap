@@ -5,12 +5,12 @@ import type { KeyboardEvent, PointerEvent, TouchEvent } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
 import { useTelegramUser } from "@/hooks/use-telegram-user";
 import { useTouchGuard } from "@/hooks/use-touch-guard";
-import type { FeedPhoto, FeedSpot, FeedUser } from "@/lib/feed-types";
+import type { FeedComment, FeedPhoto, FeedSpot, FeedUser } from "@/lib/feed-types";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { DEFAULT_RATING, PIXELS_PER_POINT, clampRating, roundRating } from "@/lib/rating";
 import { orderForSharedPhoto, readSharedSlug, telegramShareLink } from "@/lib/share";
 import { getTelegramWebApp, haptic } from "@/lib/telegram";
-import type { InputSource, PopoverAnchor } from "@/lib/types";
+import type { InputSource, SpotTarget } from "@/lib/types";
 import { AppHeader } from "./app-header";
 import { GestureHint } from "./gesture-hint";
 import { InfoModal } from "./info-modal";
@@ -53,7 +53,6 @@ export function PapRater() {
   const [justRated, setJustRated] = useState(false);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
-  const [popover, setPopover] = useState<PopoverAnchor | null>(null);
   // Photos open clean: reactions stay hidden until the toggle is used.
   const [reactionsVisible, setReactionsVisible] = useState(false);
 
@@ -147,7 +146,6 @@ export function PapRater() {
 
       setIsFlipping(true);
       setCurrentIndex(nextIndex);
-      setPopover(null);
 
       const next = list[nextIndex]?.rating.mine ?? DEFAULT_RATING;
       ratingRef.current = next;
@@ -320,37 +318,102 @@ export function PapRater() {
     };
   }, [isRating, moveRating, commitRating, cancelRating]);
 
-  const reactTo = useCallback(async (index: number, anchor: PopoverAnchor, emoji: string) => {
-    const photo = photosRef.current?.[index];
-    if (!photo) return;
+  const reactTo = useCallback(
+    async (index: number, target: SpotTarget, emoji: string): Promise<number | null> => {
+      const photo = photosRef.current?.[index];
+      if (!photo) return null;
 
-    setHasInteracted(true);
-    // Reacting means you want to see reactions; otherwise the tap looks ignored.
-    setReactionsVisible(true);
+      setHasInteracted(true);
+      // Reacting means you want to see reactions; otherwise the tap looks ignored.
+      setReactionsVisible(true);
+
+      try {
+        const response = await fetch("/api/photos/" + photo.id + "/reactions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            spotId: target.spotId ?? undefined,
+            x: target.spotId === null ? target.xPct : undefined,
+            y: target.spotId === null ? target.yPct : undefined,
+            emoji,
+          }),
+        });
+
+        if (!response.ok) return null;
+
+        const body = (await response.json()) as { spots: FeedSpot[]; removed: boolean; spotId: number };
+        setPhotos((previous) =>
+          previous?.map((entry, entryIndex) =>
+            entryIndex === index ? { ...entry, spots: body.spots } : entry,
+          ) ?? null,
+        );
+        haptic(body.removed ? "warning" : "success");
+        return body.spotId;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  const addComment = useCallback(
+    async (
+      index: number,
+      target: SpotTarget,
+      body: string,
+    ): Promise<{ spotId: number; comments: FeedComment[] } | null> => {
+      const photo = photosRef.current?.[index];
+      if (!photo) return null;
+
+      setHasInteracted(true);
+
+      try {
+        const response = await fetch("/api/photos/" + photo.id + "/comments", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            spotId: target.spotId ?? undefined,
+            x: target.spotId === null ? target.xPct : undefined,
+            y: target.spotId === null ? target.yPct : undefined,
+            body,
+          }),
+        });
+
+        if (!response.ok) return null;
+
+        const payload = (await response.json()) as {
+          spotId: number;
+          comments: FeedComment[];
+          spots: FeedSpot[];
+        };
+
+        setPhotos((previous) =>
+          previous?.map((entry, entryIndex) =>
+            entryIndex === index ? { ...entry, spots: payload.spots } : entry,
+          ) ?? null,
+        );
+        haptic("success");
+        return { spotId: payload.spotId, comments: payload.comments };
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  const loadComments = useCallback(async (index: number, spotId: number): Promise<FeedComment[]> => {
+    const photo = photosRef.current?.[index];
+    if (!photo) return [];
 
     try {
-      const response = await fetch(`/api/photos/${photo.id}/reactions`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          spotId: anchor.spotId ?? undefined,
-          x: anchor.spotId === null ? anchor.xPct : undefined,
-          y: anchor.spotId === null ? anchor.yPct : undefined,
-          emoji,
-        }),
-      });
-
-      if (!response.ok) return;
-
-      const body = (await response.json()) as { spots: FeedSpot[]; removed: boolean };
-      setPhotos((previous) =>
-        previous?.map((entry, entryIndex) =>
-          entryIndex === index ? { ...entry, spots: body.spots } : entry,
-        ) ?? null,
+      const response = await fetch(
+        "/api/photos/" + photo.id + "/comments?spotId=" + spotId,
       );
-      haptic(body.removed ? "warning" : "success");
+      if (!response.ok) return [];
+      const body = (await response.json()) as { comments: FeedComment[] };
+      return body.comments;
     } catch {
-      // Keep the previous state; the next interaction reconciles it.
+      return [];
     }
   }, []);
 
@@ -486,15 +549,14 @@ export function PapRater() {
                 index === currentIndex ? "active" : index < currentIndex ? "previous" : "next"
               }
               priority={index === currentIndex}
-              popover={index === currentIndex ? popover : null}
               showReactions={reactionsVisible}
-              onOpenPopover={setPopover}
-              onClosePopover={() => setPopover(null)}
               rating={index === currentIndex ? rating : (item.rating.mine ?? DEFAULT_RATING)}
               ratingDragging={index === currentIndex && isRating}
               canGoPrevious={index === currentIndex && currentIndex > 0}
               canGoNext={index === currentIndex && currentIndex < photos.length - 1}
-              onReact={(anchor, emoji) => void reactTo(index, anchor, emoji)}
+              onReact={(target, emoji) => reactTo(index, target, emoji)}
+              onComment={(target, body) => addComment(index, target, body)}
+              onLoadComments={(spotId) => loadComments(index, spotId)}
               onRatingStart={beginRating}
               onRatingKeyDown={handleRatingKeyDown}
               onRatingBlur={commitRating}

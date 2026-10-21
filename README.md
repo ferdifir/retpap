@@ -74,7 +74,8 @@ npm run db:studio     # drizzle studio
 Aturan yang ditegakkan database:
 
 - `reactions unique (photo_id, user_id)` — satu user satu emoji per foto.
-- `reactions` punya composite FK ke `reaction_spots (id, photo_id)`, jadi spot tidak bisa menempel ke foto lain.
+- `reactions` dan `comments` punya composite FK ke `spots (id, photo_id)`, jadi spot tidak bisa menempel ke foto lain.
+- Satu `spots` menyimpan dua lapisan: reaksi dan komentar. Spot baru dihapus saat keduanya kosong.
 - `ratings` primary key `(photo_id, user_id)` — rating kedua mengubah, bukan menambah.
 
 ## Struktur
@@ -90,12 +91,13 @@ src/
 │       ├── media/[slug]/route.ts       # sajikan foto hasil upload
 │       └── photos/[id]/
 │           ├── reactions/route.ts      # POST toggle/pindah, DELETE
+│           ├── comments/route.ts       # POST tulis, GET thread per spot
 │           └── rating/route.ts         # PUT upsert
 ├── components/pap/
 │   ├── pap-rater.tsx      # fetch feed, state, gesture
-│   ├── pap-card.tsx       # kartu, tap surface, posisi pill
-│   ├── reaction-pill.tsx  # stack emoji + total + N
-│   ├── emoji-popover.tsx  # rincian spot + palette
+│   ├── pap-card.tsx       # kartu, tap/hold surface, posisi marker
+│   ├── spot-marker.tsx    # marker gabungan: emoji + badge reaksi/komentar
+│   ├── spot-panel.tsx     # chip pilihan, palette emoji, thread komentar
 │   └── ...
 ├── db/
 │   ├── schema.ts, client.ts, queries.ts, seed.ts
@@ -116,9 +118,10 @@ src/
 
 - **Koordinat** disimpan 0..1 relatif kotak gambar yang benar-benar tergambar (`useImageBox`), bukan kotak kontainer. Dengan `object-contain` ada letterbox, dan persentase kontainer akan bergeser antar aspek layar. Tap di area letterbox ditolak.
 - **Snap** dilakukan di server (`SNAP_RADIUS_RATIO = 0.04` dari lebar gambar, dikoreksi aspek), jadi dua device tidak membuat spot kembar.
-- **Pill** menampilkan maksimal dua emoji: emoji milik sendiri lebih dulu kalau ada, lalu yang terbanyak. Sisanya jadi `+N`. Angka di kanan = total reaksi di spot itu (= jumlah user).
+- **Marker** adalah satu objek per spot: emoji dominan (atau milik sendiri), badge cyan = jumlah komentar, badge amber = total reaksi. Warna marker membedakan spot gabungan, komentar saja, dan emoji saja.
+- **Gestur** mengikuti besarnya usaha: tap di area foto = palette emoji (ringan), long-press = tulis komentar (butuh mengetik). Tap marker = chip pilihan (emoji / komentar, ikon + angka saja); long-press marker = langsung ke komentar.
+- **Snap**: tap dalam radius 4% dari spot yang ada masuk ke spot itu, jadi tidak pernah lahir dua marker yang menumpuk.
 - **Tie-break** emoji dominan memakai `min(id)` per emoji — urutan insert, stabil antar render.
-- **Gestur pill**: satu emoji → tap toggle, hold buka picker. Lebih dari satu emoji → tap langsung buka picker (hold dimatikan karena tap sudah membuka hal yang sama).
 - **Share**: tombol share membuat deep link `https://t.me/<bot>?startapp=<slug>` (fallback `?photo=<slug>` untuk browser). Saat dibuka dari link, foto itu dipasang sebagai kartu pertama dan **dikeluarkan dari posisi aslinya**, jadi deck lanjut di urutan normal tanpa menampilkan foto yang sama dua kali. Tidak ada state per user — dedupe-nya murni urutan deck dalam sesi itu.
 - **Auth**: `initData` diverifikasi di server dengan `HMAC_SHA256(key: "WebAppData", message: bot_token)`. Hanya `hash` yang dikeluarkan dari data-check-string; `signature` ikut dihitung karena klien baru mengirimkannya. `auth_date` dibatasi 24 jam.
 - **Sesi**: cookie httpOnly bertanda tangan HMAC, 7 hari. `initData` tidak dikirim ulang.

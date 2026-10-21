@@ -1,14 +1,14 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   MAX_REACTIONS_PER_SPOT,
   findSpotAt,
   sortReactionSummary,
   type ReactionSummary,
 } from "@/lib/reaction-rules";
-import { getDb } from "./client";
-import { photos, ratings, reactionSpots, reactions, users } from "./schema";
+import { getDb, type Db } from "./client";
+import { comments, photos, ratings, reactions, spots, users } from "./schema";
 
-import type { FeedPhoto, FeedSpot } from "@/lib/feed-types";
+import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
 
 export type { FeedPhoto, FeedSpot };
 
@@ -53,9 +53,9 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
 
   const spotRows = await db
     .select()
-    .from(reactionSpots)
-    .where(inArray(reactionSpots.photoId, photoIds))
-    .orderBy(reactionSpots.id);
+    .from(spots)
+    .where(inArray(spots.photoId, photoIds))
+    .orderBy(spots.id);
 
   const reactionRows = await db
     .select({
@@ -74,6 +74,11 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
     .from(ratings)
     .where(inArray(ratings.photoId, photoIds));
 
+  const commentRows = await db
+    .select({ id: comments.id, spotId: comments.spotId })
+    .from(comments)
+    .where(inArray(comments.photoId, photoIds));
+
   return photoRows.map((photo) => {
     const photoRatings = ratingRows.filter((row) => row.photoId === photo.id);
     const sum = photoRatings.reduce((total, row) => total + row.score, 0);
@@ -91,9 +96,11 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
           total: summary.total,
           myEmoji: summary.myEmoji,
           reactions: summary.reactions.map(({ emoji, count }) => ({ emoji, count })),
+          comments: commentRows.filter((row) => row.spotId === spot.id).length,
         };
       })
-      .filter((spot) => spot.total > 0);
+      // A spot with only comments still needs a marker.
+      .filter((spot) => spot.total > 0 || spot.comments > 0);
 
     return {
       id: photo.id,
@@ -115,7 +122,7 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
 export async function getSpotSummary(spotId: number, userId: number): Promise<FeedSpot | null> {
   const { db } = getDb();
 
-  const [spot] = await db.select().from(reactionSpots).where(eq(reactionSpots.id, spotId));
+  const [spot] = await db.select().from(spots).where(eq(spots.id, spotId));
   if (!spot) return null;
 
   const rows = await db
@@ -124,7 +131,12 @@ export async function getSpotSummary(spotId: number, userId: number): Promise<Fe
     .where(eq(reactions.spotId, spotId))
     .orderBy(reactions.id);
 
-  if (rows.length === 0) return null;
+  const [{ count: commentCount }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(comments)
+    .where(eq(comments.spotId, spotId));
+
+  if (rows.length === 0 && commentCount === 0) return null;
 
   const summary = summarise(rows, userId);
 
@@ -135,7 +147,47 @@ export async function getSpotSummary(spotId: number, userId: number): Promise<Fe
     total: summary.total,
     myEmoji: summary.myEmoji,
     reactions: summary.reactions.map(({ emoji, count }) => ({ emoji, count })),
+    comments: commentCount,
   };
+}
+
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+type SpotTarget = { spotId?: number; x?: number; y?: number };
+
+/**
+ * Resolves the spot a write should land on: an explicit id, or the nearest
+ * spot inside the snap radius, or a brand new one. Shared by reactions and
+ * comments so both layers meet at exactly the same points.
+ */
+async function resolveSpot(
+  tx: Tx,
+  photo: { id: number; imageWidth: number; imageHeight: number },
+  input: SpotTarget,
+): Promise<{ ok: true; spotId: number } | { ok: false; reason: "spot_not_found" | "invalid_target" }> {
+  if (input.spotId !== undefined) {
+    const [spot] = await tx
+      .select()
+      .from(spots)
+      .where(and(eq(spots.id, input.spotId), eq(spots.photoId, photo.id)));
+    if (!spot) return { ok: false, reason: "spot_not_found" };
+    return { ok: true, spotId: spot.id };
+  }
+
+  if (input.x === undefined || input.y === undefined) {
+    return { ok: false, reason: "invalid_target" };
+  }
+
+  const existing = await tx.select().from(spots).where(eq(spots.photoId, photo.id));
+  const snapped = findSpotAt(existing, input.x, input.y, photo.imageHeight / photo.imageWidth);
+  if (snapped !== null) return { ok: true, spotId: snapped };
+
+  const [created] = await tx
+    .insert(spots)
+    .values({ photoId: photo.id, x: input.x, y: input.y })
+    .returning({ id: spots.id });
+
+  return { ok: true, spotId: created.id };
 }
 
 export type ReactInput = { spotId?: number; x?: number; y?: number; emoji: string };
@@ -151,57 +203,33 @@ export async function reactToPhoto(
   const { db } = getDb();
 
   return db.transaction(async (tx) => {
+    // A spot may hold reactions, comments, or both: it only disappears when
+    // both layers are empty.
     const deleteSpotIfEmpty = async (id: number) => {
-      const remaining = await tx
+      const [remainingReaction] = await tx
         .select({ id: reactions.id })
         .from(reactions)
         .where(eq(reactions.spotId, id))
         .limit(1);
+      if (remainingReaction) return;
 
-      if (remaining.length === 0) {
-        await tx.delete(reactionSpots).where(eq(reactionSpots.id, id));
-      }
+      const [remainingComment] = await tx
+        .select({ id: comments.id })
+        .from(comments)
+        .where(eq(comments.spotId, id))
+        .limit(1);
+      if (remainingComment) return;
+
+      await tx.delete(spots).where(eq(spots.id, id));
     };
 
     // Serialise reactions for one photo so the capacity check is race-free.
     const [photo] = await tx.select().from(photos).where(eq(photos.id, photoId)).for("update");
     if (!photo) return { ok: false, reason: "invalid_target" } as const;
 
-    let spotId = input.spotId;
-
-    if (spotId !== undefined) {
-      const [spot] = await tx
-        .select()
-        .from(reactionSpots)
-        .where(and(eq(reactionSpots.id, spotId), eq(reactionSpots.photoId, photoId)));
-      if (!spot) return { ok: false, reason: "spot_not_found" } as const;
-    } else {
-      if (input.x === undefined || input.y === undefined) {
-        return { ok: false, reason: "invalid_target" } as const;
-      }
-
-      const spots = await tx
-        .select()
-        .from(reactionSpots)
-        .where(eq(reactionSpots.photoId, photoId));
-
-      const snapped = findSpotAt(
-        spots,
-        input.x,
-        input.y,
-        photo.imageHeight / photo.imageWidth,
-      );
-
-      if (snapped !== null) {
-        spotId = snapped;
-      } else {
-        const [created] = await tx
-          .insert(reactionSpots)
-          .values({ photoId, x: input.x, y: input.y })
-          .returning({ id: reactionSpots.id });
-        spotId = created.id;
-      }
-    }
+    const resolved = await resolveSpot(tx, photo, input);
+    if (!resolved.ok) return resolved;
+    const spotId = resolved.spotId;
 
     const [mine] = await tx
       .select()
@@ -316,14 +344,22 @@ export async function clearReaction(photoId: number, userId: number): Promise<nu
 
     await tx.delete(reactions).where(eq(reactions.id, mine.id));
 
-    const remaining = await tx
+    const [remainingReaction] = await tx
       .select({ id: reactions.id })
       .from(reactions)
       .where(eq(reactions.spotId, mine.spotId))
       .limit(1);
 
-    if (remaining.length === 0) {
-      await tx.delete(reactionSpots).where(eq(reactionSpots.id, mine.spotId));
+    const [remainingComment] = remainingReaction
+      ? [null]
+      : await tx
+          .select({ id: comments.id })
+          .from(comments)
+          .where(eq(comments.spotId, mine.spotId))
+          .limit(1);
+
+    if (!remainingReaction && !remainingComment) {
+      await tx.delete(spots).where(eq(spots.id, mine.spotId));
     }
 
     return mine.spotId;
@@ -336,9 +372,9 @@ export async function getPhotoSpots(photoId: number, userId: number): Promise<Fe
 
   const spotRows = await db
     .select()
-    .from(reactionSpots)
-    .where(eq(reactionSpots.photoId, photoId))
-    .orderBy(reactionSpots.id);
+    .from(spots)
+    .where(eq(spots.photoId, photoId))
+    .orderBy(spots.id);
 
   if (spotRows.length === 0) return [];
 
@@ -348,9 +384,15 @@ export async function getPhotoSpots(photoId: number, userId: number): Promise<Fe
     .where(eq(reactions.photoId, photoId))
     .orderBy(reactions.id);
 
+  const commentRows = await db
+    .select({ spotId: comments.spotId })
+    .from(comments)
+    .where(eq(comments.photoId, photoId));
+
   return spotRows.flatMap((spot) => {
     const atSpot = rows.filter((row) => row.spotId === spot.id);
-    if (atSpot.length === 0) return [];
+    const commentCount = commentRows.filter((row) => row.spotId === spot.id).length;
+    if (atSpot.length === 0 && commentCount === 0) return [];
 
     const summary = summarise(atSpot, userId);
 
@@ -362,7 +404,69 @@ export async function getPhotoSpots(photoId: number, userId: number): Promise<Fe
         total: summary.total,
         myEmoji: summary.myEmoji,
         reactions: summary.reactions.map(({ emoji, count }) => ({ emoji, count })),
+        comments: commentCount,
       },
     ];
   });
+}
+
+export type CommentInput = { spotId?: number; x?: number; y?: number; body: string };
+export type CommentOutcome =
+  | { ok: true; spotId: number }
+  | { ok: false; reason: "spot_not_found" | "invalid_target" };
+
+/** Adds a comment to an existing spot, or to a new one at the given point. */
+export async function addComment(
+  photoId: number,
+  userId: number,
+  input: CommentInput,
+): Promise<CommentOutcome> {
+  const { db } = getDb();
+
+  return db.transaction(async (tx) => {
+    const [photo] = await tx.select().from(photos).where(eq(photos.id, photoId)).for("update");
+    if (!photo) return { ok: false, reason: "invalid_target" } as const;
+
+    const resolved = await resolveSpot(tx, photo, input);
+    if (!resolved.ok) return resolved;
+
+    await tx.insert(comments).values({
+      photoId,
+      spotId: resolved.spotId,
+      userId,
+      body: input.body,
+    });
+
+    return { ok: true, spotId: resolved.spotId } as const;
+  });
+}
+
+/** Newest first, so the panel can show the latest without a second query. */
+export async function getSpotComments(
+  photoId: number,
+  spotId: number,
+  limit = 50,
+): Promise<FeedComment[]> {
+  const { db } = getDb();
+
+  const rows = await db
+    .select({
+      id: comments.id,
+      body: comments.body,
+      createdAt: comments.createdAt,
+      firstName: users.firstName,
+      username: users.username,
+    })
+    .from(comments)
+    .innerJoin(users, eq(users.id, comments.userId))
+    .where(and(eq(comments.photoId, photoId), eq(comments.spotId, spotId)))
+    .orderBy(desc(comments.id))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    id: row.id,
+    body: row.body,
+    createdAt: row.createdAt.toISOString(),
+    author: { firstName: row.firstName, username: row.username },
+  }));
 }

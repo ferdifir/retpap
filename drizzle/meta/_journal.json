@@ -15,6 +15,13 @@
       "when": 1792589034238,
       "tag": "0001_loving_thunderball",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792596357904,
+      "tag": "0002_spots_and_comments",
+      "breakpoints": true
     }
   ]
 }

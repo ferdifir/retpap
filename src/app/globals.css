@@ -145,48 +145,15 @@
   }
 }
 
-.emoji-popover {
+.spot-panel {
   transform-origin: bottom center;
   animation: popover-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
-/* Anchored reaction badge */
-@keyframes badge-pop {
-  from {
-    transform: scale(0);
-  }
-  80% {
-    transform: scale(1.2);
-  }
-  to {
-    transform: scale(1);
-  }
-}
-
-.emoji-badge {
-  animation: badge-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-/* Hold progress on a reaction badge */
-@keyframes hold-ring {
-  from {
-    box-shadow: 0 0 0 0 rgb(56 189 248 / 0.85);
-  }
-  to {
-    box-shadow: 0 0 0 7px rgb(56 189 248 / 0);
-  }
-}
-
-.reaction-holding {
-  animation: hold-ring 0.5s linear forwards;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .card-face,
-  .emoji-popover,
-  .emoji-badge,
-  .tap-ripple,
-  .reaction-holding {
+  .spot-panel,
+  .tap-ripple {
     animation: none !important;
     transition-duration: 0.01ms !important;
   }

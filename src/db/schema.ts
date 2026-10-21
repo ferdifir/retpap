@@ -73,8 +73,8 @@ export const photos = pgTable(
   ],
 );
 
-export const reactionSpots = pgTable(
-  "reaction_spots",
+export const spots = pgTable(
+  "spots",
   {
     id: identity(),
     photoId: bigint("photo_id", { mode: "number" })
@@ -87,10 +87,10 @@ export const reactionSpots = pgTable(
   },
   (table) => [
     // Redundant for uniqueness, required as the target of the composite FK.
-    unique("reaction_spots_id_photo").on(table.id, table.photoId),
-    index("reaction_spots_photo_idx").on(table.photoId),
-    check("reaction_spots_x_range", sql`${table.x} between 0 and 1`),
-    check("reaction_spots_y_range", sql`${table.y} between 0 and 1`),
+    unique("spots_id_photo").on(table.id, table.photoId),
+    index("spots_photo_idx").on(table.photoId),
+    check("spots_x_range", sql`${table.x} between 0 and 1`),
+    check("spots_y_range", sql`${table.y} between 0 and 1`),
   ],
 );
 
@@ -115,8 +115,34 @@ export const reactions = pgTable(
     foreignKey({
       name: "reactions_spot_photo_fk",
       columns: [table.spotId, table.photoId],
-      foreignColumns: [reactionSpots.id, reactionSpots.photoId],
+      foreignColumns: [spots.id, spots.photoId],
     }).onDelete("cascade"),
+  ],
+);
+
+export const comments = pgTable(
+  "comments",
+  {
+    id: identity(),
+    photoId: bigint("photo_id", { mode: "number" })
+      .notNull()
+      .references(() => photos.id, { onDelete: "cascade" }),
+    /** Spot the comment is pinned to; comments and reactions share a point. */
+    spotId: bigint("spot_id", { mode: "number" }).notNull(),
+    userId: bigint("user_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("comments_spot_idx").on(table.spotId, table.createdAt),
+    foreignKey({
+      name: "comments_spot_photo_fk",
+      columns: [table.spotId, table.photoId],
+      foreignColumns: [spots.id, spots.photoId],
+    }).onDelete("cascade"),
+    check("comments_body_length", sql`char_length(${table.body}) between 1 and 500`),
   ],
 );
 

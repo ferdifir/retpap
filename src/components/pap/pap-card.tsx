@@ -1,35 +1,44 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, TouchEvent } from "react";
 import { ChevronDownIcon, ChevronUpIcon } from "@/components/icons";
 import { useImageBox } from "@/hooks/use-image-box";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { findSpotAt } from "@/lib/reaction-rules";
 import { haptic } from "@/lib/telegram";
-import type { FeedPhoto, FeedSpot } from "@/lib/feed-types";
-import type { CardPosition, InputSource, PopoverAnchor } from "@/lib/types";
-import { EmojiPopover } from "./emoji-popover";
+import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
+import type { CardPosition, InputSource, SpotTarget } from "@/lib/types";
 import { RatingSlider } from "./rating-slider";
-import { ReactionPill } from "./reaction-pill";
+import { SpotMarker } from "./spot-marker";
+import { SpotPanel, type PanelMode } from "./spot-panel";
 
 type RippleState = { key: number; x: number; y: number };
+
+type Interaction = {
+  xPct: number;
+  yPct: number;
+  spotId: number | null;
+  mode: PanelMode;
+};
 
 type PapCardProps = {
   item: FeedPhoto;
   position: CardPosition;
-  popover: PopoverAnchor | null;
   /** Hidden by default so a photo is seen without the reaction layer. */
   showReactions: boolean;
-  onOpenPopover: (anchor: PopoverAnchor) => void;
-  onClosePopover: () => void;
   priority: boolean;
   rating: number;
   ratingDragging: boolean;
   canGoPrevious: boolean;
   canGoNext: boolean;
-  onReact: (anchor: PopoverAnchor, emoji: string) => void;
+  onReact: (target: SpotTarget, emoji: string) => Promise<number | null>;
+  onComment: (
+    target: SpotTarget,
+    body: string,
+  ) => Promise<{ spotId: number; comments: FeedComment[] } | null>;
+  onLoadComments: (spotId: number) => Promise<FeedComment[]>;
   onRatingStart: (clientY: number, source: InputSource) => void;
   onRatingKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onRatingBlur: () => void;
@@ -44,19 +53,21 @@ const TRANSFORMS: Record<CardPosition, string> = {
   next: "translateY(120%) rotateX(-65deg) scale(0.85)",
 };
 
+const LONG_PRESS_MS = 420;
+const TAP_SLOP_PX = 12;
+
 export function PapCard({
   item,
   position,
-  popover,
   showReactions,
-  onOpenPopover,
-  onClosePopover,
   priority,
   rating,
   ratingDragging,
   canGoPrevious,
   canGoNext,
   onReact,
+  onComment,
+  onLoadComments,
   onRatingStart,
   onRatingKeyDown,
   onRatingBlur,
@@ -66,55 +77,176 @@ export function PapCard({
 }: PapCardProps) {
   const isActive = position === "active";
   const [ripple, setRipple] = useState<RippleState | null>(null);
+  const [interaction, setInteraction] = useState<Interaction | null>(null);
+  const [comments, setComments] = useState<FeedComment[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
   const tapStart = useRef<{ x: number; y: number } | null>(null);
   const touchTapStart = useRef<{ x: number; y: number } | null>(null);
+  const pressTimer = useRef<number | null>(null);
+  const longFired = useRef(false);
+  const pressOrigin = useRef<{ x: number; y: number } | null>(null);
+  const commentRequest = useRef(0);
   const photoRef = useRef<HTMLDivElement>(null);
   const box = useImageBox(photoRef, item.imageWidth, item.imageHeight);
 
   const aspect = item.imageHeight / item.imageWidth;
+  const spot = interaction?.spotId ? (item.spots.find((entry) => entry.id === interaction.spotId) ?? null) : null;
 
-  function anchorFor(spot: FeedSpot): PopoverAnchor {
-    return {
-      x: box.left + spot.x * box.width,
-      y: box.top + spot.y * box.height,
-      xPct: spot.x,
-      yPct: spot.y,
-      spotId: spot.id,
-    };
-  }
-
-  function openReaction(clientX: number, clientY: number) {
+  const toPct = useCallback((clientX: number, clientY: number) => {
     const element = photoRef.current;
-    if (!element || box.width === 0 || box.height === 0) return;
+    if (!element) return null;
 
-    // The card may be mid-flip, so its rect is scaled by the CSS transform.
-    // Normalise back to layout coordinates before comparing with the box.
     const rect = element.getBoundingClientRect();
     const scaleX = element.clientWidth > 0 ? rect.width / element.clientWidth : 1;
     const scaleY = element.clientHeight > 0 ? rect.height / element.clientHeight : 1;
     const containerX = (clientX - rect.left) / scaleX;
     const containerY = (clientY - rect.top) / scaleY;
-    const x = (containerX - box.left) / box.width;
-    const y = (containerY - box.top) / box.height;
 
-    // Taps in the letterbox do not belong to the photo.
-    if (x < 0 || y < 0 || x > 1 || y > 1) return;
+    return {
+      x: (containerX - box.left) / box.width,
+      y: (containerY - box.top) / box.height,
+      containerX,
+      containerY,
+    };
+  }, [box.left, box.top, box.width, box.height]);
 
-    setRipple({ key: Date.now(), x: containerX, y: containerY });
-    onOpenPopover({
-      x: containerX,
-      y: containerY,
-      xPct: x,
-      yPct: y,
-      spotId: findSpotAt(item.spots, x, y, aspect),
-    });
-    onInteraction();
-    haptic("selection");
-  }
+  const loadComments = useCallback(
+    async (spotId: number) => {
+      const token = ++commentRequest.current;
+      setComments(null);
+      const list = await onLoadComments(spotId);
+      if (token === commentRequest.current) setComments(list);
+    },
+    [onLoadComments],
+  );
+
+  const openForSpot = useCallback(
+    (target: FeedSpot, mode?: PanelMode) => {
+      const both = target.total > 0 && target.comments > 0;
+      const next: PanelMode = mode ?? (both ? "chooser" : target.total > 0 ? "emoji" : "comments");
+
+      setInteraction({ xPct: target.x, yPct: target.y, spotId: target.id, mode: next });
+      if (next === "comments") void loadComments(target.id);
+      onInteraction();
+      haptic("selection");
+    },
+    [loadComments, onInteraction],
+  );
+
+  const openPoint = useCallback(
+    (xPct: number, yPct: number, mode: PanelMode) => {
+      const snapped = findSpotAt(item.spots, xPct, yPct, aspect);
+      // A hold on empty space writes a new comment; only an existing spot has
+      // a thread to open.
+      const nextMode: PanelMode = mode === "comments" && snapped === null ? "composer" : mode;
+
+      setInteraction({ xPct, yPct, spotId: snapped, mode: nextMode });
+      if (nextMode === "comments" && snapped !== null) void loadComments(snapped);
+      onInteraction();
+      haptic(nextMode === "composer" || nextMode === "comments" ? "impact" : "selection");
+    },
+    [aspect, item.spots, loadComments, onInteraction],
+  );
+
+  const closePanel = useCallback(() => setInteraction(null), []);
+
+  const handleEmoji = useCallback(
+    async (emoji: string) => {
+      if (!interaction || busy) return;
+      setBusy(true);
+      const spotId = await onReact(
+        { spotId: interaction.spotId, xPct: interaction.xPct, yPct: interaction.yPct },
+        emoji,
+      );
+      setBusy(false);
+      if (spotId !== null) {
+        setInteraction((current) => (current ? { ...current, spotId, mode: "emoji" } : current));
+      }
+    },
+    [busy, interaction, onReact],
+  );
+
+  const handleComment = useCallback(
+    async (body: string) => {
+      if (!interaction || busy) return;
+      setBusy(true);
+      const result = await onComment(
+        { spotId: interaction.spotId, xPct: interaction.xPct, yPct: interaction.yPct },
+        body,
+      );
+      setBusy(false);
+      if (!result) return;
+
+      commentRequest.current += 1;
+      setComments(result.comments);
+      setInteraction((current) =>
+        current ? { ...current, spotId: result.spotId, mode: "comments" } : current,
+      );
+    },
+    [busy, interaction, onComment],
+  );
+
+  /* ---- gestures on the photo surface ---- */
+
+  const clearPress = () => {
+    if (pressTimer.current !== null) {
+      window.clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+
+  const startPress = (clientX: number, clientY: number) => {
+    clearPress();
+    longFired.current = false;
+    pressOrigin.current = { x: clientX, y: clientY };
+
+    pressTimer.current = window.setTimeout(() => {
+      pressTimer.current = null;
+      longFired.current = true;
+      const at = toPct(clientX, clientY);
+      if (!at || at.x < 0 || at.y < 0 || at.x > 1 || at.y > 1) return;
+      // Hold is the heavier gesture: it always means "write a comment".
+      openPoint(at.x, at.y, "comments");
+    }, LONG_PRESS_MS);
+  };
+
+  const movePress = (clientX: number, clientY: number) => {
+    const origin = pressOrigin.current;
+    if (!origin) return;
+    if (Math.hypot(clientX - origin.x, clientY - origin.y) > 10) clearPress();
+  };
+
+  const finishPress = (clientX: number, clientY: number) => {
+    clearPress();
+    pressOrigin.current = null;
+
+    if (longFired.current) {
+      longFired.current = false;
+      return;
+    }
+
+    // Any open panel: the first tap outside just dismisses it.
+    if (interaction) {
+      closePanel();
+      return;
+    }
+
+    const at = toPct(clientX, clientY);
+    if (!at || at.x < 0 || at.y < 0 || at.x > 1 || at.y > 1) return;
+
+    setRipple({ key: Date.now(), x: at.containerX, y: at.containerY });
+    openPoint(at.x, at.y, "emoji");
+  };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     notePointerInput();
     tapStart.current = { x: event.clientX, y: event.clientY };
+    startPress(event.clientX, event.clientY);
+  };
+
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    movePress(event.clientX, event.clientY);
   };
 
   const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -122,9 +254,13 @@ export function PapCard({
     tapStart.current = null;
     if (!start) return;
 
-    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) return;
+    const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    if (moved > TAP_SLOP_PX && !longFired.current) {
+      clearPress();
+      return;
+    }
 
-    openReaction(event.clientX, event.clientY);
+    finishPress(event.clientX, event.clientY);
   };
 
   const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
@@ -134,6 +270,12 @@ export function PapCard({
     if (!touch) return;
 
     touchTapStart.current = { x: touch.clientX, y: touch.clientY };
+    startPress(touch.clientX, touch.clientY);
+  };
+
+  const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (touch) movePress(touch.clientX, touch.clientY);
   };
 
   const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
@@ -146,9 +288,12 @@ export function PapCard({
     const touch = event.changedTouches[0];
     if (!touch) return;
 
-    if (Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > 12) return;
+    if (Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > TAP_SLOP_PX) {
+      clearPress();
+      return;
+    }
 
-    openReaction(touch.clientX, touch.clientY);
+    finishPress(touch.clientX, touch.clientY);
   };
 
   const handleTapKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -156,8 +301,15 @@ export function PapCard({
     event.preventDefault();
 
     const rect = event.currentTarget.getBoundingClientRect();
-    openReaction(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    const at = toPct(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    if (!at) return;
+    openPoint(at.x, at.y, "emoji");
   };
+
+  const panelX = interaction
+    ? Math.max(128, Math.min((photoRef.current?.clientWidth ?? 360) - 128, box.left + interaction.xPct * box.width))
+    : 0;
+  const panelY = interaction ? box.top + interaction.yPct * box.height : 0;
 
   return (
     <article
@@ -188,14 +340,17 @@ export function PapCard({
           <div
             role="button"
             tabIndex={isActive ? 0 : -1}
-            aria-label="Tap photo to add an emoji reaction"
-            className="absolute inset-0 z-10 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400"
+            aria-label="Tap untuk reaksi emoji, tahan untuk komentar"
+            className="absolute inset-0 z-10 cursor-pointer touch-manipulation outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400"
             onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={() => {
               touchTapStart.current = null;
+              clearPress();
             }}
             onKeyDown={handleTapKeyDown}
           >
@@ -208,29 +363,25 @@ export function PapCard({
             ) : null}
           </div>
 
-          {/* Pills live on the image box, not on the letterboxed container. */}
+          {/* Markers live on the image box, not on the letterboxed container. */}
           {showReactions ? (
             <div
               className="pointer-events-none absolute z-20"
               style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
             >
-              {item.spots.map((spot) => (
+              {item.spots.map((entry) => (
                 <div
-                  key={spot.id}
-                  className="absolute -translate-x-1/2 -translate-y-1/2"
+                  key={entry.id}
+                  className="absolute"
                   style={{
-                    left: `clamp(2.75rem, ${spot.x * 100}%, calc(100% - 2.75rem))`,
-                    top: `${spot.y * 100}%`,
+                    left: "clamp(2.75rem, " + entry.x * 100 + "%, calc(100% - 2.75rem))",
+                    top: entry.y * 100 + "%",
                   }}
                 >
-                  <ReactionPill
-                    spot={spot}
-                    onToggle={() => onReact(anchorFor(spot), spot.reactions[0].emoji)}
-                    onOpenPicker={() => {
-                      onOpenPopover(anchorFor(spot));
-                      onInteraction();
-                      haptic("impact");
-                    }}
+                  <SpotMarker
+                    spot={entry}
+                    onOpen={() => openForSpot(entry)}
+                    onOpenComments={() => openForSpot(entry, "comments")}
                   />
                 </div>
               ))}
@@ -249,15 +400,24 @@ export function PapCard({
             onBlur={onRatingBlur}
           />
 
-          {isActive && popover ? (
-            <EmojiPopover
-              anchor={popover}
-              spot={popover.spotId ? (item.spots.find((s) => s.id === popover.spotId) ?? null) : null}
-              onClose={onClosePopover}
-              onSelect={(emoji) => {
-                onReact(popover, emoji);
-                onClosePopover();
+          {isActive && interaction ? (
+            <SpotPanel
+              x={panelX}
+              y={panelY}
+              above={interaction.yPct > 0.36}
+              mode={interaction.mode}
+              spot={spot}
+              comments={comments}
+              busy={busy}
+              onMode={(mode) => {
+                setInteraction((current) => (current ? { ...current, mode } : current));
+                if (mode === "comments" && interaction.spotId !== null) {
+                  void loadComments(interaction.spotId);
+                }
               }}
+              onEmoji={(emoji) => void handleEmoji(emoji)}
+              onComment={(body) => void handleComment(body)}
+              onClose={closePanel}
             />
           ) : null}
         </div>
