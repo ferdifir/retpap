@@ -23,7 +23,7 @@
   .photobox { position:relative; flex:1; margin:0 10px; border-radius:22px; overflow:hidden; border:1px solid #1e293b; background:#020617; }
   .photobox img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
   .shade { position:absolute; inset:0; pointer-events:none; transition:background .25s; }
-  .tapzone { position:absolute; inset:0; cursor:crosshair; }
+  .tapzone { position:absolute; inset:0; cursor:pointer; touch-action:manipulation; user-select:none; -webkit-user-select:none; }
   .layer { position:absolute; inset:0; pointer-events:none; }
   .layer > * { pointer-events:auto; }
 
@@ -31,7 +31,7 @@
   .marker { position:absolute; transform:translate(-50%,-50%); width:34px; height:34px; border-radius:50%;
     display:grid; place-items:center; font-size:15px; line-height:1; cursor:pointer; border:2px solid #0b1220;
     background:linear-gradient(135deg,#0ea5e9,#2563eb); box-shadow:0 4px 14px rgba(2,6,23,.6);
-    transition:transform .18s, box-shadow .18s; }
+    transition:transform .18s, box-shadow .18s; touch-action:manipulation; user-select:none; }
   .marker:hover { transform:translate(-50%,-50%) scale(1.1); }
   .marker.open { transform:translate(-50%,-50%) scale(1.14); box-shadow:0 0 0 4px rgba(34,211,238,.25),0 8px 22px rgba(2,6,23,.7); }
   .marker.comments-only { background:linear-gradient(135deg,#0ea5e9,#0369a1); }
@@ -40,16 +40,15 @@
     font-size:9px; font-weight:900; display:grid; place-items:center; border:1.5px solid #0b1220; }
   .badge.c { top:-5px; right:-6px; background:var(--cyan); color:#04222b; }
   .badge.e { bottom:-5px; right:-6px; background:var(--amber); color:#251a00; }
-  .stem { position:absolute; left:50%; width:1px; background:linear-gradient(to top,rgba(34,211,238,.7),rgba(34,211,238,0)); transform:translateX(-50%); }
 
-  /* ---- chooser chips (map-style spiderfy) ---- */
+  /* ---- chooser chips: icon + count only ---- */
   .chips { position:absolute; transform:translateX(-50%); display:flex; gap:8px; align-items:center; }
-  .chip { display:flex; align-items:center; gap:6px; padding:7px 11px; border-radius:999px; cursor:pointer;
-    font-size:11px; font-weight:800; border:1px solid transparent; box-shadow:0 10px 26px rgba(0,0,0,.55);
+  .chip { display:flex; align-items:center; gap:5px; padding:7px 11px; border-radius:999px; cursor:pointer;
+    font-size:13px; font-weight:800; border:1px solid transparent; box-shadow:0 10px 26px rgba(0,0,0,.55);
     animation:pop .18s ease-out both; }
+  .chip .n { font-size:10px; font-weight:900; }
   .chip.emoji { background:linear-gradient(135deg,#f59e0b,#d97706); color:#221500; border-color:#fbbf24; }
   .chip.comment { background:linear-gradient(135deg,#22d3ee,#0ea5e9); color:#04222b; border-color:#67e8f9; }
-  .chip.off { filter:saturate(.55) brightness(.85); }
   @keyframes pop { from { opacity:0; transform:translateY(6px) scale(.9); } to { opacity:1; transform:none; } }
 
   /* ---- panels ---- */
@@ -82,13 +81,17 @@
   .hint { font-size:9px; color:#64748b; margin-top:7px; line-height:1.5; }
 
   /* ---- composer ---- */
-  .composer { position:absolute; width:250px; transform:translateX(-50%); background:rgba(15,23,42,.98);
+  .composer { position:absolute; width:256px; transform:translateX(-50%); background:rgba(15,23,42,.98);
     border:1px solid rgba(34,211,238,.6); border-radius:14px; padding:8px; box-shadow:0 16px 40px rgba(0,0,0,.6); }
+  .composer .head { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .composer .head span { font-size:9.5px; color:#64748b; }
+  .close { margin-left:auto; width:20px; height:20px; border-radius:50%; border:1px solid rgba(148,163,184,.25);
+    background:transparent; color:#94a3b8; font-size:11px; line-height:1; display:grid; place-items:center; cursor:pointer; padding:0; }
+  .close:hover { color:#e2e8f0; border-color:rgba(148,163,184,.5); }
   .composer .row { display:flex; gap:6px; align-items:center; }
-  .composer input { flex:1; background:transparent; border:0; outline:none; color:#e2e8f0; font-size:11.5px; padding:4px 2px; }
+  .composer input { flex:1; background:rgba(2,6,23,.7); border:1px solid rgba(148,163,184,.2); border-radius:9px; padding:6px 8px; color:#e2e8f0; font-size:11px; outline:none; }
   .composer input::placeholder { color:#64748b; }
-  .composer button { border:0; border-radius:9px; padding:6px 10px; font-size:10px; font-weight:800; color:#04222b; background:linear-gradient(135deg,#22d3ee,#0ea5e9); cursor:pointer; }
-  .composer .ghost { display:inline-block; margin-top:6px; font-size:9px; color:#64748b; }
+  .composer .send { border:0; border-radius:9px; padding:6px 10px; font-size:10px; font-weight:800; color:#04222b; background:linear-gradient(135deg,#22d3ee,#0ea5e9); cursor:pointer; }
 
   .caption { margin:8px 10px 0; padding:8px 10px; border-radius:12px; background:rgba(30,41,59,.55); border:1px solid #1e293b; font-size:11px; text-align:center; color:#cbd5e1; }
   .nav { display:flex; gap:8px; padding:10px; }
@@ -100,9 +103,9 @@
   .side h2 { font-size:13px; margin:0 0 10px; }
   .rule { display:flex; gap:10px; padding:9px 0; border-bottom:1px solid rgba(148,163,184,.12); }
   .rule:last-of-type { border-bottom:0; }
-  .rule .k { flex:0 0 92px; font-size:10px; font-weight:800; color:var(--cyan); text-transform:uppercase; letter-spacing:.04em; }
+  .rule .k { flex:0 0 96px; font-size:10px; font-weight:800; color:var(--cyan); text-transform:uppercase; letter-spacing:.04em; }
   .rule .v { font-size:11.5px; line-height:1.55; color:#94a3b8; }
-  .stress { margin-top:14px; display:flex; gap:8px; align-items:center; }
+  .stress { margin-top:14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .stress button { border:1px solid var(--line); background:transparent; color:#cbd5e1; font-size:10.5px; padding:7px 10px; border-radius:9px; cursor:pointer; }
   .stress button.on { background:var(--amber); border-color:var(--amber); color:#251a00; font-weight:800; }
   .stress span { font-size:10px; color:#64748b; }
@@ -113,8 +116,8 @@
 <body>
 <div class="wrap">
   <div>
-    <h1>Komentar &amp; reaksi di satu titik</h1>
-    <p class="lead">Tap marker = mekar jadi dua pilihan. Tap area kosong = komentar baru di titik itu. Long-press = palette emoji.</p>
+    <h1>Emoji tap, komentar long-press</h1>
+    <p class="lead">Tap = emoji (ringan). Long-press = komentar (butuh mengetik). Tap di luar = tutup.</p>
     <div class="phone">
       <div class="topbar">
         <div class="score"><b>8.1</b><span>/ 10.0</span></div>
@@ -132,11 +135,12 @@
   </div>
 
   <div class="side">
-    <h2>Aturan yang disepakati</h2>
-    <div class="rule"><div class="k">Tap kosong</div><div class="v">Composer muncul di titik itu. Setelah kirim, pin baru lahir di situ.</div></div>
-    <div class="rule"><div class="k">Tap marker</div><div class="v">Mekar jadi dua chip: emoji dan komentar. Kalau titik itu hanya punya salah satu, langsung terbuka tanpa memilih.</div></div>
-    <div class="rule"><div class="k">Snap 4%</div><div class="v">Tap dalam radius 4% lebar foto dari marker yang ada masuk ke titik itu, bukan bikin pin baru yang menumpuk.</div></div>
-    <div class="rule"><div class="k">Long-press</div><div class="v">Palette emoji untuk titik itu. Emoji yang sudah dipakai ditandai aktif; tap lagi = hapus.</div></div>
+    <h2>Aturan gestur</h2>
+    <div class="rule"><div class="k">Tap kosong</div><div class="v">Palette emoji di titik itu. Pilih emoji, spot langsung lahir.</div></div>
+    <div class="rule"><div class="k">Long-press</div><div class="v">Composer komentar di titik itu. Ada tombol tutup, dan tap di luar juga menutup.</div></div>
+    <div class="rule"><div class="k">Tap marker</div><div class="v">Mekar jadi dua chip tanpa teks: emoji + angka, komentar + angka. Marker satu jenis langsung terbuka.</div></div>
+    <div class="rule"><div class="k">Long-press marker</div><div class="v">Langsung ke komentar, melewati pemilihan chip.</div></div>
+    <div class="rule"><div class="k">Snap 4%</div><div class="v">Tap dalam radius 4% dari marker masuk ke titik itu, bukan bikin pin baru yang menumpuk.</div></div>
 
     <div class="stress">
       <button id="stressBtn">Uji padat</button>
@@ -144,8 +148,8 @@
     </div>
 
     <div class="legend">
-      <b>Data:</b> satu <i>spot</i> punya dua lapisan, emoji dan komentar. Marker menampilkan emoji utama + badge jumlah komentar (cyan) dan jumlah reaksi (amber).<br><br>
-      <b>Coba:</b> tap marker biru-oranye di kiri atas, lalu pilih salah satu chip. Tap marker biru saja (hanya komentar) untuk melihat jalur tanpa pemilihan.
+      <b>Data:</b> satu spot punya dua lapisan. Badge cyan = jumlah komentar, badge amber = jumlah reaksi.<br><br>
+      <b>Coba:</b> tap foto sekali (palette), lalu tahan foto (composer). Tahan marker untuk langsung ke komentar.
     </div>
   </div>
 </div>
@@ -168,16 +172,18 @@ var SPOTS = [
 ];
 
 var PALETTE = ["🔥","👓","💯","😂","🎯","❤️"];
+var LONG_PRESS_MS = 420;
 
-var state = { open:null, panel:null, composer:null, stress:false };
+var state = { open:null, panel:null, composer:null, draft:null, stress:false };
 var photo = document.getElementById("photobox");
 var layer = document.getElementById("layer");
 var shade = document.getElementById("shade");
+var tapzone = document.getElementById("tapzone");
 
 function spots() {
   if (!state.stress) return SPOTS;
   var extra = SPOTS.map(function (s, i) {
-    return { id:100 + i, x:Math.min(0.92, s.x + 0.03), y:Math.min(0.94, s.y + 0.02), mine:s.mine,
+    return { id:1000 + i, x:Math.min(0.92, s.x + 0.035), y:Math.min(0.94, s.y + 0.02), mine:s.mine,
       emoji:Object.assign({}, s.emoji), comments:s.comments.slice() };
   });
   return SPOTS.concat(extra);
@@ -186,11 +192,17 @@ function spots() {
 function pxX(x) { return Math.round(x * photo.clientWidth); }
 function pxY(y) { return Math.round(y * photo.clientHeight); }
 function clampX(x) { var half = 128; return Math.max(half, Math.min(photo.clientWidth - half, pxX(x))); }
-
-function totals(spot) {
+function totals(s) {
   var e = 0;
-  Object.keys(spot.emoji).forEach(function (k) { e += spot.emoji[k]; });
-  return { e:e, c:spot.comments.length };
+  Object.keys(s.emoji).forEach(function (k) { e += s.emoji[k]; });
+  return { e:e, c:s.comments.length };
+}
+
+function closeAll() {
+  state.open = null;
+  state.panel = null;
+  state.composer = null;
+  state.draft = null;
 }
 
 function render() {
@@ -201,54 +213,143 @@ function render() {
   var active = null;
   list.forEach(function (s) { if (s.id === state.open) active = s; });
 
-  if (active) {
-    shade.style.background = "radial-gradient(circle 200px at " + pxX(active.x) + "px " + pxY(active.y) + "px, rgba(2,6,23,0) 0%, rgba(2,6,23,.55) 62%, rgba(2,6,23,.74) 100%)";
+  var focus = active || state.draft || state.composer;
+  if (focus) {
+    shade.style.background = "radial-gradient(circle 200px at " + pxX(focus.x) + "px " + pxY(focus.y) + "px, rgba(2,6,23,0) 0%, rgba(2,6,23,.55) 62%, rgba(2,6,23,.74) 100%)";
   }
 
   list.forEach(function (spot) {
     var t = totals(spot);
-    var m = document.createElement("div");
     var both = t.e > 0 && t.c > 0;
+    var m = document.createElement("div");
     m.className = "marker" + (both ? "" : (t.c > 0 ? " comments-only" : " emoji-only")) + (state.open === spot.id ? " open" : "");
     m.style.left = (spot.x * 100) + "%";
     m.style.top = (spot.y * 100) + "%";
     m.innerHTML = (spot.mine || (t.c > 0 ? "💬" : "🙂")) +
       (t.c > 0 ? "<span class=\"badge c\">" + t.c + "</span>" : "") +
       (t.e > 0 ? "<span class=\"badge e\">" + t.e + "</span>" : "");
-    m.onclick = function (e) { e.stopPropagation(); onMarker(spot); };
+    bindMarker(m, spot);
     layer.appendChild(m);
   });
 
   if (active) renderMenu(active);
+  if (state.draft) renderEmojiPanel(state.draft, state.draft.x, state.draft.y, state.draft.y > 0.36, true);
   if (state.composer) renderComposer();
+}
+
+/* ---- gestures ---- */
+function bindMarker(el, spot) {
+  var timer = null;
+  var fired = false;
+
+  el.addEventListener("pointerdown", function (e) {
+    e.stopPropagation();
+    fired = false;
+    timer = setTimeout(function () {
+      fired = true;
+      state.open = spot.id;
+      state.panel = "comments";
+      state.composer = null;
+      state.draft = null;
+      render();
+    }, LONG_PRESS_MS);
+  });
+
+  el.addEventListener("pointerup", function () { clearTimeout(timer); });
+  el.addEventListener("pointercancel", function () { clearTimeout(timer); });
+  el.addEventListener("pointerleave", function () { clearTimeout(timer); });
+
+  el.addEventListener("click", function (e) {
+    e.stopPropagation();
+    if (fired) { fired = false; return; }
+    onMarker(spot);
+  });
 }
 
 function onMarker(spot) {
   var t = totals(spot);
   var both = t.e > 0 && t.c > 0;
 
-  if (state.open === spot.id && state.panel === null) { state.open = null; render(); return; }
+  if (state.open === spot.id && state.panel === null && !state.composer) { closeAll(); render(); return; }
 
-  if (both) { state.open = spot.id; state.panel = null; state.composer = null; render(); return; }
-
-  state.open = spot.id;
-  state.panel = t.e > 0 ? "emoji" : "comments";
+  state.draft = null;
   state.composer = null;
+  state.open = spot.id;
+  state.panel = both ? null : (t.e > 0 ? "emoji" : "comments");
   render();
 }
 
+function coords(e) {
+  var r = photo.getBoundingClientRect();
+  return { x:(e.clientX - r.left) / r.width, y:(e.clientY - r.top) / r.height };
+}
+
+function nearestSpot(x, y) {
+  var found = null;
+  var best = 9;
+  spots().forEach(function (s) {
+    var dx = s.x - x;
+    var dy = (s.y - y) * 1.35;
+    var d = Math.sqrt(dx * dx + dy * dy);
+    if (d < best) { best = d; found = s; }
+  });
+  return best < 0.04 ? found : null;
+}
+
+var pressTimer = null;
+var longFired = false;
+
+tapzone.addEventListener("pointerdown", function (e) {
+  var at = coords(e);
+  longFired = false;
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(function () {
+    longFired = true;
+    openComposerAt(at);
+  }, LONG_PRESS_MS);
+});
+
+tapzone.addEventListener("pointerup", function () { clearTimeout(pressTimer); });
+tapzone.addEventListener("pointercancel", function () { clearTimeout(pressTimer); });
+tapzone.addEventListener("pointerleave", function () { clearTimeout(pressTimer); });
+
+tapzone.addEventListener("click", function (e) {
+  if (longFired) { longFired = false; return; }
+  var at = coords(e);
+
+  // Any open overlay: first tap outside dismisses it, it does not open a new one.
+  if (state.open !== null || state.panel !== null || state.composer || state.draft) {
+    var near = nearestSpot(at.x, at.y);
+    closeAll();
+    if (near) { onMarker(near); } else { render(); }
+    return;
+  }
+
+  var near = nearestSpot(at.x, at.y);
+  if (near) { onMarker(near); return; }
+
+  state.draft = { x:at.x, y:at.y };
+  render();
+});
+
+function openComposerAt(at) {
+  var near = nearestSpot(at.x, at.y);
+  closeAll();
+  if (near) {
+    state.open = near.id;
+    state.panel = "comments";
+  } else {
+    state.composer = { x:at.x, y:at.y };
+  }
+  render();
+}
+
+/* ---- render pieces ---- */
 function renderMenu(spot) {
   var t = totals(spot);
   var x = clampX(spot.x);
   var y = pxY(spot.y);
   var above = spot.y > 0.36;
-
-  var stem = document.createElement("div");
-  stem.className = "stem";
-  stem.style.left = x + "px";
-  stem.style.top = above ? (y - 34) + "px" : (y + 34) + "px";
-  stem.style.height = "0";
-  layer.appendChild(stem);
 
   if (t.e > 0 && t.c > 0 && state.panel === null) {
     var chips = document.createElement("div");
@@ -259,12 +360,12 @@ function renderMenu(spot) {
 
     var ce = document.createElement("div");
     ce.className = "chip emoji";
-    ce.innerHTML = "🔥 " + t.e + " reaksi";
+    ce.innerHTML = "🔥<span class=\"n\">" + t.e + "</span>";
     ce.onclick = function (ev) { ev.stopPropagation(); state.panel = "emoji"; render(); };
 
     var cc = document.createElement("div");
     cc.className = "chip comment";
-    cc.innerHTML = "💬 " + t.c + " komentar";
+    cc.innerHTML = "💬<span class=\"n\">" + t.c + "</span>";
     cc.onclick = function (ev) { ev.stopPropagation(); state.panel = "comments"; render(); };
 
     chips.appendChild(ce);
@@ -273,7 +374,7 @@ function renderMenu(spot) {
     return;
   }
 
-  if (state.panel === "emoji") renderEmojiPanel(spot, x, y, above);
+  if (state.panel === "emoji") renderEmojiPanel(spot, x, y, above, false);
   if (state.panel === "comments") renderCommentPanel(spot, x, y, above);
 }
 
@@ -286,23 +387,51 @@ function panelEl(kind, x, y, above) {
   return box;
 }
 
-function renderEmojiPanel(spot, x, y, above) {
+function renderEmojiPanel(spot, x, y, above, isDraft) {
   var box = panelEl("emoji", x, y, above);
   var t = totals(spot);
-  var chips = "";
-  Object.keys(spot.emoji).forEach(function (e) {
-    chips += "<span class=\"echip" + (spot.mine === e ? " mine" : "") + "\">" + e + " <b>" + spot.emoji[e] + "</b></span>";
-  });
+  var have = Object.keys(spot.emoji);
+  var chips = have.map(function (e) {
+    return "<span class=\"echip" + (spot.mine === e ? " mine" : "") + "\">" + e + " <b>" + spot.emoji[e] + "</b></span>";
+  }).join("");
   var palette = PALETTE.filter(function (e) { return !spot.emoji[e]; }).map(function (e) {
-    return "<span class=\"echip\">" + e + "</span>";
+    return "<span class=\"echip pick\" data-e=\"" + e + "\">" + e + "</span>";
   }).join("");
 
   box.innerHTML =
-    "<div class=\"emojirow\">" + chips + "</div>" +
+    (chips ? "<div class=\"emojirow\">" + chips + "</div>" : "") +
     (palette ? "<div class=\"divider\"></div><div class=\"emojirow\">" + palette + "</div>" : "") +
-    "<div class=\"hint\">" + t.e + " reaksi di titik ini. Emoji yang aktif ditandai; tap lagi untuk menghapus.</div>" +
+    "<div class=\"hint\">" + (isDraft ? "Pilih emoji untuk membuat titik di sini." : t.e + " reaksi. Tap emoji aktif untuk menghapus.") + "</div>" +
     "<div class=\"tail\"></div>";
+
+  box.querySelectorAll(".pick").forEach(function (el) {
+    el.onclick = function (ev) { ev.stopPropagation(); pickEmoji(spot, el.dataset.e); };
+  });
   layer.appendChild(box);
+}
+
+function pickEmoji(spot, emoji) {
+  if (state.draft) {
+    var id = Date.now();
+    SPOTS.push({ id:id, x:spot.x, y:spot.y, mine:emoji, emoji:{}, comments:[] });
+    var created = SPOTS[SPOTS.length - 1];
+    created.emoji[emoji] = 1;
+    state.draft = null;
+    state.open = id;
+    state.panel = "emoji";
+    render();
+    return;
+  }
+
+  var had = spot.emoji[emoji] || 0;
+  if (spot.mine === emoji) {
+    if (had > 1) spot.emoji[emoji] = had - 1; else delete spot.emoji[emoji];
+    spot.mine = null;
+  } else {
+    spot.emoji[emoji] = had + 1;
+    spot.mine = emoji;
+  }
+  render();
 }
 
 function renderCommentPanel(spot, x, y, above) {
@@ -310,17 +439,28 @@ function renderCommentPanel(spot, x, y, above) {
   var first = spot.comments[0];
   var n = spot.comments.length;
 
-  box.innerHTML =
-    "<div class=\"who\"><span class=\"av\">" + first.i + "</span><span class=\"name\">" + first.n + "</span><span class=\"time\">" + first.at + "</span></div>" +
-    "<div class=\"txt\">" + first.t + "</div>" +
-    "<div class=\"divider\"></div>" +
-    "<div class=\"foot\"><b>" + n + " komentar</b><span>·</span><span>lihat semua</span></div>" +
-    "<div class=\"reply\"><input placeholder=\"Tulis balasan di titik ini…\"><button>Kirim</button></div>" +
-    "<div class=\"tail\"></div>";
+  if (!first) {
+    box.innerHTML =
+      "<div class=\"who\"><span class=\"name\">Belum ada komentar</span><button class=\"close\" aria-label=\"Tutup\">&#10005;</button></div>" +
+      "<div class=\"reply\"><input placeholder=\"Tulis komentar di titik ini…\"><button>Kirim</button></div>" +
+      "<div class=\"tail\"></div>";
+  } else {
+    box.innerHTML =
+      "<div class=\"who\"><span class=\"av\">" + first.i + "</span><span class=\"name\">" + first.n + "</span><span class=\"time\">" + first.at + "</span><button class=\"close\" aria-label=\"Tutup\">&#10005;</button></div>" +
+      "<div class=\"txt\">" + first.t + "</div>" +
+      "<div class=\"divider\"></div>" +
+      "<div class=\"foot\"><b>" + n + " komentar</b><span>·</span><span>lihat semua</span></div>" +
+      "<div class=\"reply\"><input placeholder=\"Tulis balasan di titik ini…\"><button>Kirim</button></div>" +
+      "<div class=\"tail\"></div>";
+  }
 
+  box.querySelector(".close").onclick = function (ev) { ev.stopPropagation(); closeAll(); render(); };
   var input = box.querySelector("input");
-  input.onkeydown = function (e) { if (e.key === "Enter") addComment(spot, input.value); };
-  box.querySelector("button").onclick = function () { addComment(spot, input.value); };
+  input.onkeydown = function (e) {
+    if (e.key === "Enter") addComment(spot, input.value);
+    if (e.key === "Escape") { closeAll(); render(); }
+  };
+  box.querySelector(".reply button").onclick = function () { addComment(spot, input.value); };
   layer.appendChild(box);
 }
 
@@ -342,53 +482,42 @@ function renderComposer() {
   box.style.top = above ? (y - 20) + "px" : (y + 20) + "px";
   box.style.transform = above ? "translate(-50%,-100%)" : "translate(-50%,0)";
   box.innerHTML =
-    "<div class=\"row\"><input id=\"cinput\" placeholder=\"Komentar di titik ini…\" autocomplete=\"off\"><button>Kirim</button></div>" +
-    "<span class=\"ghost\">Menempel di titik ini, bukan di bawah foto.</span>";
+    "<div class=\"head\"><span>Komentar baru di titik ini</span><button class=\"close\" aria-label=\"Tutup\">&#10005;</button></div>" +
+    "<div class=\"row\"><input id=\"cinput\" placeholder=\"Tulis komentar…\" autocomplete=\"off\"><button class=\"send\">Kirim</button></div>";
   layer.appendChild(box);
+
   var input = document.getElementById("cinput");
   setTimeout(function () { input.focus(); }, 30);
-  input.onkeydown = function (e) { if (e.key === "Enter") createSpot(input.value); };
-  box.querySelector("button").onclick = function () { createSpot(input.value); };
+
+  box.querySelector(".close").onclick = function (ev) { ev.stopPropagation(); closeAll(); render(); };
+  input.onkeydown = function (e) {
+    if (e.key === "Enter") createSpot(input.value);
+    if (e.key === "Escape") { closeAll(); render(); }
+  };
+  box.querySelector(".send").onclick = function () { createSpot(input.value); };
 }
 
 function createSpot(value) {
   var text = (value || "").trim();
-  if (!text) return;
+  if (!text) { closeAll(); render(); return; }
   var c = state.composer;
   SPOTS.push({ id:Date.now(), x:c.x, y:c.y, mine:null, emoji:{}, comments:[{ n:"Kamu", i:"K", t:text, at:"baru" }] });
-  state.composer = null;
-  state.open = SPOTS[SPOTS.length - 1].id;
+  var id = SPOTS[SPOTS.length - 1].id;
+  closeAll();
+  state.open = id;
   state.panel = "comments";
   render();
 }
 
-document.getElementById("tapzone").onclick = function (e) {
-  var r = photo.getBoundingClientRect();
-  var x = (e.clientX - r.left) / r.width;
-  var y = (e.clientY - r.top) / r.height;
-
-  var nearest = null;
-  var best = 9;
-  spots().forEach(function (s) {
-    var dx = s.x - x;
-    var dy = (s.y - y) * 1.35;
-    var d = Math.sqrt(dx * dx + dy * dy);
-    if (d < best) { best = d; nearest = s; }
-  });
-
-  if (nearest && best < 0.04) { onMarker(nearest); return; }
-
-  state.open = null;
-  state.panel = null;
-  state.composer = { x:x, y:y };
-  render();
-};
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape" && (state.open !== null || state.composer || state.draft)) { closeAll(); render(); }
+});
 
 document.getElementById("stressBtn").onclick = function () {
   state.stress = !state.stress;
   this.classList.toggle("on", state.stress);
   this.textContent = state.stress ? "Kembali normal" : "Uji padat";
-  state.open = null; state.panel = null;
+  closeAll();
   render();
   updateInfo();
 };
@@ -403,10 +532,11 @@ function updateInfo() {
 window.addEventListener("resize", function () { render(); });
 
 var qp = new URLSearchParams(location.search);
-
 setTimeout(function () {
   state.open = Number(qp.get("spot") || 1);
   state.panel = qp.get("panel") || null;
+  if (qp.get("composer") === "1") { state.open = null; state.composer = { x:0.5, y:0.62 }; }
+  if (qp.get("draft") === "1") { state.open = null; state.draft = { x:0.5, y:0.55 }; }
   render();
   updateInfo();
 }, 400);
