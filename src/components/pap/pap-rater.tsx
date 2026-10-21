@@ -8,7 +8,8 @@ import { useTouchGuard } from "@/hooks/use-touch-guard";
 import type { FeedPhoto, FeedSpot, FeedUser } from "@/lib/feed-types";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { DEFAULT_RATING, PIXELS_PER_POINT, clampRating, roundRating } from "@/lib/rating";
-import { haptic } from "@/lib/telegram";
+import { orderForSharedPhoto, readSharedSlug, telegramShareLink } from "@/lib/share";
+import { getTelegramWebApp, haptic } from "@/lib/telegram";
 import type { InputSource, PopoverAnchor } from "@/lib/types";
 import { AppHeader } from "./app-header";
 import { GestureHint } from "./gesture-hint";
@@ -99,11 +100,15 @@ export function PapRater() {
         const body = (await response.json()) as { photos: FeedPhoto[] };
         if (cancelled) return;
 
+        // A share link pins its photo first; the rest keeps the normal order
+        // and the pinned photo is dropped from its original position.
+        const deck = orderForSharedPhoto(body.photos, readSharedSlug());
+
         setUser(sessionBody.user);
-        setPhotos(body.photos);
+        setPhotos(deck);
         setLoadState("ready");
 
-        const initial = body.photos[0]?.rating.mine ?? DEFAULT_RATING;
+        const initial = deck[0]?.rating.mine ?? DEFAULT_RATING;
         ratingRef.current = initial;
         setRating(initial);
       } catch {
@@ -415,6 +420,22 @@ export function PapRater() {
 
   const handleInteraction = useCallback(() => setHasInteracted(true), []);
 
+  const shareCurrentPhoto = useCallback(() => {
+    const photo = photosRef.current?.[currentIndex];
+    if (!photo) return;
+
+    haptic("impact");
+    const link = telegramShareLink(photo.slug, photo.caption);
+
+    const webApp = getTelegramWebApp();
+    if (webApp?.openTelegramLink) {
+      webApp.openTelegramLink(link);
+      return;
+    }
+
+    window.open(link, "_blank", "noopener,noreferrer");
+  }, [currentIndex]);
+
   if (loadState === "loading") {
     return (
       <div className="flex h-full items-center justify-center">
@@ -440,6 +461,7 @@ export function PapRater() {
         votes={activeItem?.rating.votes ?? 0}
         reactionsVisible={reactionsVisible}
         onToggleReactions={() => setReactionsVisible((visible) => !visible)}
+        onShare={shareCurrentPhoto}
         onInfoClick={() => setIsInfoOpen(true)}
       />
 

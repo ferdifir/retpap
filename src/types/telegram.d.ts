@@ -73,6 +73,8 @@ export interface TelegramWebApp {
   ready: () => void;
   expand: () => void;
   requestFullscreen?: () => void;
+  /** Opens t.me links inside Telegram instead of the in-app browser. */
+  openTelegramLink?: (url: string) => void;
   exitFullscreen?: () => void;
   onEvent?: (event: string, handler: () => void) => void;
   offEvent?: (event: string, handler: () => void) => void;

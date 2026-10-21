@@ -1,4 +1,4 @@
-import { EyeIcon, EyeOffIcon, InfoIcon } from "@/components/icons";
+import { EyeIcon, EyeOffIcon, InfoIcon, ShareIcon } from "@/components/icons";
 import { formatVotes, getRatingTone } from "@/lib/rating";
 
 type AppHeaderProps = {
@@ -6,6 +6,7 @@ type AppHeaderProps = {
   votes: number;
   reactionsVisible: boolean;
   onToggleReactions: () => void;
+  onShare: () => void;
   onInfoClick: () => void;
 };
 
@@ -14,6 +15,7 @@ export function AppHeader({
   votes,
   reactionsVisible,
   onToggleReactions,
+  onShare,
   onInfoClick,
 }: AppHeaderProps) {
   // Same tone the slider overlay uses, so the icon always matches the score.
@@ -51,6 +53,15 @@ export function AppHeader({
           }
         >
           {reactionsVisible ? <EyeIcon className="size-3.5" /> : <EyeOffIcon className="size-3.5" />}
+        </button>
+
+        <button
+          type="button"
+          onClick={onShare}
+          aria-label="Bagikan foto ini"
+          className="glass-pill flex size-8 items-center justify-center rounded-full text-slate-300 transition-transform hover:text-white active:scale-95"
+        >
+          <ShareIcon className="size-3.5" />
         </button>
 
         <button

@@ -97,6 +97,7 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
 
     return {
       id: photo.id,
+      slug: photo.slug,
       caption: photo.caption,
       imageUrl: photo.imageUrl,
       imageWidth: photo.imageWidth,

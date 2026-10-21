@@ -11,6 +11,8 @@ export type FeedSpot = {
 
 export type FeedPhoto = {
   id: number;
+  /** Stable public identifier, used by share links. */
+  slug: string;
   caption: string;
   imageUrl: string;
   imageWidth: number;
