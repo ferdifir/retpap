@@ -119,6 +119,7 @@ src/
 - **Pill** menampilkan maksimal dua emoji: emoji milik sendiri lebih dulu kalau ada, lalu yang terbanyak. Sisanya jadi `+N`. Angka di kanan = total reaksi di spot itu (= jumlah user).
 - **Tie-break** emoji dominan memakai `min(id)` per emoji — urutan insert, stabil antar render.
 - **Gestur pill**: satu emoji → tap toggle, hold buka picker. Lebih dari satu emoji → tap langsung buka picker (hold dimatikan karena tap sudah membuka hal yang sama).
+- **Share**: tombol share membuat deep link `https://t.me/<bot>?startapp=<slug>` (fallback `?photo=<slug>` untuk browser). Saat dibuka dari link, foto itu dipasang sebagai kartu pertama dan **dikeluarkan dari posisi aslinya**, jadi deck lanjut di urutan normal tanpa menampilkan foto yang sama dua kali. Tidak ada state per user — dedupe-nya murni urutan deck dalam sesi itu.
 - **Auth**: `initData` diverifikasi di server dengan `HMAC_SHA256(key: "WebAppData", message: bot_token)`. Hanya `hash` yang dikeluarkan dari data-check-string; `signature` ikut dihitung karena klien baru mengirimkannya. `auth_date` dibatasi 24 jam.
 - **Sesi**: cookie httpOnly bertanda tangan HMAC, 7 hari. `initData` tidak dikirim ulang.
 - **Optimistic UI**: rating diterapkan lokal lalu direkonsiliasi dengan nilai server. Reaksi menunggu respons server karena server yang menentukan hasil akhir spot.
