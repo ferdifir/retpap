@@ -15,6 +15,19 @@ npm run dev
 
 Tanpa `TELEGRAM_BOT_TOKEN`, aplikasi tetap jalan di `npm run dev` dengan user dev per browser.
 
+## Deploy
+
+Produksi ada di VPS `root@109.111.53.58:38954`, path `/var/www/retpap`, pm2 `retpap` di port 3010.
+
+```bash
+npm run deploy                 # sync → backup DB → migrate → build → restart → health check
+npm run deploy -- --dry-run    # lihat file yang akan berubah, tanpa menyentuh server
+npm run deploy -- --install    # paksa npm ci (kalau lockfile berubah, ini otomatis)
+```
+
+Target bisa diganti lewat env: `SSH_HOST`, `SSH_PORT`, `REMOTE_DIR`, `PM2_APP`, `APP_PORT`, `PUBLIC_URL`.
+File `.env.local` tidak pernah ikut ter-sync dan tidak terhapus oleh `--delete`.
+
 ## Database
 
 Postgres 12. Skema ada di `src/db/schema.ts`, migrasi di `drizzle/`.
@@ -71,6 +84,6 @@ src/
 - **Pill** menampilkan maksimal dua emoji: emoji milik sendiri lebih dulu kalau ada, lalu yang terbanyak. Sisanya jadi `+N`. Angka di kanan = total reaksi di spot itu (= jumlah user).
 - **Tie-break** emoji dominan memakai `min(id)` per emoji — urutan insert, stabil antar render.
 - **Gestur pill**: satu emoji → tap toggle, hold buka picker. Lebih dari satu emoji → tap langsung buka picker (hold dimatikan karena tap sudah membuka hal yang sama).
-- **Auth**: `initData` diverifikasi di server dengan `HMAC_SHA256(key: "WebAppData", message: bot_token)`, `hash` dan `signature` dikeluarkan dari data-check-string, dan `auth_date` dibatasi 24 jam.
+- **Auth**: `initData` diverifikasi di server dengan `HMAC_SHA256(key: "WebAppData", message: bot_token)`. Hanya `hash` yang dikeluarkan dari data-check-string; `signature` ikut dihitung karena klien baru mengirimkannya. `auth_date` dibatasi 24 jam.
 - **Sesi**: cookie httpOnly bertanda tangan HMAC, 7 hari. `initData` tidak dikirim ulang.
 - **Optimistic UI**: rating diterapkan lokal lalu direkonsiliasi dengan nilai server. Reaksi menunggu respons server karena server yang menentukan hasil akhir spot.
