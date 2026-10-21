@@ -1,0 +1,211 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-tg-bg: #0f172a;
+  --color-tg-card: #1e293b;
+  --color-tg-accent: #38bdf8;
+  --color-tg-neon-green: #22c55e;
+  --color-tg-neon-orange: #f97316;
+}
+
+@layer base {
+  :root {
+    /*
+     * Telegram publishes two insets: the device safe area (notch, home
+     * indicator) and the content safe area (Telegram's own header/bottom bar).
+     * Content must clear both. env() is the fallback for standalone/older
+     * clients, where the SDK never writes the --tg-* variables.
+     */
+    --app-inset-top: max(
+      calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px)),
+      env(safe-area-inset-top, 0px)
+    );
+    --app-inset-right: max(
+      calc(var(--tg-safe-area-inset-right, 0px) + var(--tg-content-safe-area-inset-right, 0px)),
+      env(safe-area-inset-right, 0px)
+    );
+    --app-inset-bottom: max(
+      calc(var(--tg-safe-area-inset-bottom, 0px) + var(--tg-content-safe-area-inset-bottom, 0px)),
+      env(safe-area-inset-bottom, 0px)
+    );
+    --app-inset-left: max(
+      calc(var(--tg-safe-area-inset-left, 0px) + var(--tg-content-safe-area-inset-left, 0px)),
+      env(safe-area-inset-left, 0px)
+    );
+  }
+
+  html,
+  body {
+    height: 100%;
+    overscroll-behavior: none;
+    /* Custom gesture physics replaces native scrolling. */
+    touch-action: none;
+  }
+
+  body {
+    background-color: #0b0f19;
+    color: var(--color-slate-100);
+    font-family: var(--font-sans);
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    background: rgb(15 23 42 / 0.75);
+    border: 1px solid rgb(255 255 255 / 0.1);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .glass-pill {
+    background: rgb(255 255 255 / 0.12);
+    border: 1px solid rgb(255 255 255 / 0.2);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .vertical-slider-track {
+    background: rgb(15 23 42 / 0.65);
+    border: 1px solid rgb(255 255 255 / 0.2);
+    box-shadow: 0 8px 32px 0 rgb(0 0 0 / 0.37);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
+
+/* 3D card scene */
+.scene {
+  perspective: 1200px;
+  transform-style: preserve-3d;
+}
+
+.card-container {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+.card-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  backface-visibility: hidden;
+  box-shadow: 0 20px 50px rgb(0 0 0 / 0.6);
+  transition:
+    transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+
+/* Tap ripple */
+@keyframes ripple {
+  from {
+    transform: scale(0.2);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+.tap-ripple {
+  position: absolute;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 2px solid var(--color-tg-accent);
+  border-radius: 9999px;
+  background: rgb(56 189 248 / 0.5);
+  transform-origin: center;
+  pointer-events: none;
+  animation: ripple 0.6s ease-out forwards;
+}
+
+/* Emoji popover */
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(0.6);
+  }
+  70% {
+    transform: translate(-50%, -115%) scale(1.05);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -110%) scale(1);
+  }
+}
+
+.emoji-popover {
+  transform-origin: bottom center;
+  animation: popover-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Anchored reaction badge */
+@keyframes badge-pop {
+  from {
+    transform: scale(0);
+  }
+  80% {
+    transform: scale(1.2);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.emoji-badge {
+  animation: badge-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Hold progress on a reaction badge */
+@keyframes hold-ring {
+  from {
+    box-shadow: 0 0 0 0 rgb(56 189 248 / 0.85);
+  }
+  to {
+    box-shadow: 0 0 0 7px rgb(56 189 248 / 0);
+  }
+}
+
+.reaction-holding {
+  animation: hold-ring 0.5s linear forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-face,
+  .emoji-popover,
+  .emoji-badge,
+  .tap-ripple,
+  .reaction-holding {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* Telegram safe-area shell. Declared outside @layer so it always ships. */
+.safe-shell {
+  padding-top: calc(var(--app-inset-top) + 0.5rem);
+  padding-right: calc(var(--app-inset-right) + 0.5rem);
+  padding-bottom: calc(var(--app-inset-bottom) + 0.5rem);
+  padding-left: calc(var(--app-inset-left) + 0.5rem);
+}
+
+@media (min-width: 40rem) {
+  .safe-shell {
+    padding-top: calc(var(--app-inset-top) + 1rem);
+    padding-right: calc(var(--app-inset-right) + 1rem);
+    padding-bottom: calc(var(--app-inset-bottom) + 1rem);
+    padding-left: calc(var(--app-inset-left) + 1rem);
+  }
+}
