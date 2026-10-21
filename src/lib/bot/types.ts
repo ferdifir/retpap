@@ -41,6 +41,8 @@ export interface BotUpdate {
 export interface InlineKeyboardButton {
   text: string;
   callback_data?: string;
+  /** Opens a link; used for t.me direct links that carry `startapp`. */
+  url?: string;
   web_app?: { url: string };
 }
 

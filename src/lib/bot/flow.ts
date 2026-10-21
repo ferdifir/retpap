@@ -1,4 +1,5 @@
 import { clearUploadSession, createPhoto, getUploadSession, saveUploadSession } from "@/db/upload";
+import { shareUrlFor } from "@/lib/share";
 import type { TelegramUser } from "@/types/telegram";
 import {
   answerCallbackQuery,
@@ -22,7 +23,16 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function openAppKeyboard(): InlineKeyboardMarkup {
+/**
+ * With a slug, this must be a t.me direct link, not a web_app button: only
+ * direct links carry `startapp` into the Mini App as `start_param`, which is
+ * what pins the freshly uploaded photo to the top of the deck.
+ */
+function openAppKeyboard(slug?: string): InlineKeyboardMarkup {
+  if (slug) {
+    return { inline_keyboard: [[{ text: "Buka Rate PAP", url: shareUrlFor(slug) }]] };
+  }
+
   return { inline_keyboard: [[{ text: "Buka Rate PAP", web_app: { url: appUrl() } }]] };
 }
 
@@ -218,8 +228,8 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
     await clearUploadSession(user.id);
 
     await editMessageCaption(chatId, messageId, "✅ <b>Terbit!</b>\n\nCaption: <i>" + escapeHtml(session.caption) + "</i>");
-    await sendMessage(chatId, "Fotonya sudah masuk feed. Buka app untuk lihat dan menilai foto lain.", {
-      keyboard: openAppKeyboard(),
+    await sendMessage(chatId, "Fotonya sudah masuk feed dan jadi yang paling atas. Buka app untuk lihat dan menilai foto lain.", {
+      keyboard: openAppKeyboard(slug),
     });
   } catch (error) {
     console.error("[bot] publish failed", error);
