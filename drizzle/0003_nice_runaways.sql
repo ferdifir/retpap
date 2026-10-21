@@ -1,0 +1,1 @@
+ALTER TABLE "comments" ADD CONSTRAINT "comments_photo_user_key" UNIQUE("photo_id","user_id");

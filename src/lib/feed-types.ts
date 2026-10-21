@@ -15,6 +15,8 @@ export type FeedComment = {
   id: number;
   body: string;
   createdAt: string;
+  /** Written by the signed-in user: the one comment they own on this photo. */
+  mine: boolean;
   author: { firstName: string; username: string | null };
 };
 

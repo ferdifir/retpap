@@ -137,6 +137,8 @@ export const comments = pgTable(
   },
   (table) => [
     index("comments_spot_idx").on(table.spotId, table.createdAt),
+    // One comment per user per photo, mirroring the one-reaction rule.
+    unique("comments_photo_user_key").on(table.photoId, table.userId),
     foreignKey({
       name: "comments_spot_photo_fk",
       columns: [table.spotId, table.photoId],

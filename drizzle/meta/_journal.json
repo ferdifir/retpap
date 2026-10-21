@@ -22,6 +22,13 @@
       "when": 1792596357904,
       "tag": "0002_spots_and_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792604436545,
+      "tag": "0003_nice_runaways",
+      "breakpoints": true
     }
   ]
 }

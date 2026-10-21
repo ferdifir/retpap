@@ -1,6 +1,3 @@
-/** Distinct emoji allowed on a single spot. */
-export const MAX_REACTIONS_PER_SPOT = 4;
-
 /**
  * Snap radius as a fraction of the image width. Distance is measured in
  * normalised image space with the height scaled by the aspect ratio, so it

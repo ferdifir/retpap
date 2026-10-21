@@ -6,7 +6,6 @@ import { EMOJI_OPTIONS } from "@/lib/data";
 import { MAX_COMMENT_LENGTH } from "@/lib/comment-rules";
 import { cn } from "@/lib/cn";
 import type { FeedComment, FeedSpot } from "@/lib/feed-types";
-import { MAX_REACTIONS_PER_SPOT } from "@/lib/reaction-rules";
 
 export type PanelMode = "chooser" | "emoji" | "comments" | "composer";
 
@@ -140,23 +139,7 @@ export function SpotPanel({
       ) : null}
 
       {mode === "comments" ? (
-        <div>
-          {comments === null ? (
-            <p className="py-2 text-[10px] text-slate-500">Memuat…</p>
-          ) : comments.length === 0 ? null : (
-            <div className="mt-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className="grid size-4.5 place-items-center rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 text-[8px] font-black text-white">
-                  {comments[0].author.firstName.slice(0, 1).toUpperCase()}
-                </span>
-                <span className="truncate text-[10px] font-bold text-slate-200">{comments[0].author.firstName}</span>
-              </div>
-              <p className="mt-1 text-[11px] leading-snug break-words text-slate-300">{comments[0].body}</p>
-            </div>
-          )}
-
-          <CommentForm placeholder="Tulis balasan di titik ini…" busy={busy} onSubmit={onComment} />
-        </div>
+        <CommentsBody comments={comments} busy={busy} onSubmit={onComment} />
       ) : null}
 
       {mode === "composer" ? (
@@ -173,62 +156,113 @@ function EmojiBody({
   spot: FeedSpot | null;
   onEmoji: (emoji: string) => void;
 }) {
-  const existing = spot?.reactions ?? [];
+  const counts = new Map((spot?.reactions ?? []).map((reaction) => [reaction.emoji, reaction.count]));
   const mine = spot?.myEmoji ?? null;
-  const atCapacity = existing.length >= MAX_REACTIONS_PER_SPOT;
-  const canSwap = mine !== null;
-  const palette = EMOJI_OPTIONS.filter((emoji) => !existing.some((reaction) => reaction.emoji === emoji));
-  const showPalette = palette.length > 0 && (!atCapacity || canSwap);
+
+  // The full palette always stays visible: an emoji with no count yet is still
+  // a valid choice, and hiding used ones made the list shrink as people voted.
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {EMOJI_OPTIONS.map((emoji) => {
+        const count = counts.get(emoji) ?? 0;
+        const isMine = mine === emoji;
+
+        return (
+          <button
+            key={emoji}
+            type="button"
+            onClick={() => onEmoji(emoji)}
+            aria-pressed={isMine}
+            aria-label={"Reaksi " + emoji + ", " + count}
+            className={cn(
+              "flex items-center gap-1 rounded-full border px-2 py-1 text-[13px] leading-none transition-colors",
+              isMine
+                ? "border-amber-300 bg-amber-400/25"
+                : "border-amber-400/25 bg-amber-400/8 hover:bg-amber-400/15",
+            )}
+          >
+            <span aria-hidden="true">{emoji}</span>
+            <span
+              className={cn(
+                "text-[9px] font-black",
+                count > 0 ? "text-amber-300" : "text-slate-500",
+              )}
+            >
+              {count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CommentsBody({
+  comments,
+  busy,
+  onSubmit,
+}: {
+  comments: FeedComment[] | null;
+  busy: boolean;
+  onSubmit: (body: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (comments === null) {
+    return <p className="py-2 text-[10px] text-slate-500">Memuat…</p>;
+  }
+
+  const mine = comments.some((comment) => comment.mine);
+  const latest = comments[0] ?? null;
 
   return (
     <div>
-      {existing.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1">
-          {existing.map((reaction) => {
-            const isMine = mine === reaction.emoji;
-            return (
-              <button
-                key={reaction.emoji}
-                type="button"
-                onClick={() => onEmoji(reaction.emoji)}
-                aria-pressed={isMine}
-                className={cn(
-                  "flex items-center gap-1 rounded-full border px-2 py-1 text-[12px] leading-none transition-colors",
-                  isMine
-                    ? "border-amber-300 bg-amber-400/25"
-                    : "border-amber-400/30 bg-amber-400/10 hover:bg-amber-400/20",
-                )}
-              >
-                <span aria-hidden="true">{reaction.emoji}</span>
-                <span className="text-[9px] font-black text-amber-300">{reaction.count}</span>
-              </button>
-            );
-          })}
-        </div>
+      {latest === null ? null : expanded ? (
+        <ul className="max-h-44 space-y-2 overflow-y-auto pr-1">
+          {comments.map((comment) => (
+            <li key={comment.id}>
+              <CommentLine comment={comment} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <CommentLine comment={latest} />
+      )}
+
+      {comments.length > 1 ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          className="mt-1.5 text-[9px] font-bold text-cyan-300/90"
+        >
+          {expanded ? "Ringkas" : comments.length + " komentar · lihat semua"}
+        </button>
       ) : null}
 
-      {showPalette ? (
-        <>
-          {existing.length > 0 ? <div className="my-2 h-px bg-slate-700/40" /> : null}
-          <div className="flex flex-wrap items-center gap-1">
-            {palette.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={() => onEmoji(emoji)}
-                aria-label={"Reaksi " + emoji}
-                className="grid size-7 place-items-center rounded-full text-base transition-colors hover:bg-slate-800"
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : null}
+      {/* One comment per photo: once it exists there is nothing left to type. */}
+      {mine ? null : (
+        <CommentForm
+          placeholder={comments.length > 0 ? "Tulis balasan di titik ini…" : "Tulis komentar di titik ini…"}
+          busy={busy}
+          onSubmit={onSubmit}
+        />
+      )}
+    </div>
+  );
+}
 
-      {!showPalette && existing.length > 0 ? (
-        <p className="mt-1.5 text-[9px] text-slate-500">Titik ini penuh.</p>
-      ) : null}
+function CommentLine({ comment }: { comment: FeedComment }) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5">
+        <span className="grid size-4.5 place-items-center rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 text-[8px] font-black text-white">
+          {comment.author.firstName.slice(0, 1).toUpperCase()}
+        </span>
+        <span className="truncate text-[10px] font-bold text-slate-200">
+          {comment.mine ? "Kamu" : comment.author.firstName}
+        </span>
+      </div>
+      <p className="mt-1 text-[11px] leading-snug break-words text-slate-300">{comment.body}</p>
     </div>
   );
 }

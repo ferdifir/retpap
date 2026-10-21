@@ -149,7 +149,10 @@ export function PapCard({
     [aspect, item.spots, loadComments, onInteraction],
   );
 
-  const closePanel = useCallback(() => setInteraction(null), []);
+  const closePanel = useCallback(() => {
+    setInteraction(null);
+    setComments(null);
+  }, []);
 
   const handleEmoji = useCallback(
     async (emoji: string) => {
@@ -160,11 +163,11 @@ export function PapCard({
         emoji,
       );
       setBusy(false);
-      if (spotId !== null) {
-        setInteraction((current) => (current ? { ...current, spotId, mode: "emoji" } : current));
-      }
+      // Picking an emoji is the whole interaction: the panel gets out of the
+      // way instead of turning into a counter view.
+      if (spotId !== null) closePanel();
     },
-    [busy, interaction, onReact],
+    [busy, closePanel, interaction, onReact],
   );
 
   const handleComment = useCallback(
@@ -178,13 +181,11 @@ export function PapCard({
       setBusy(false);
       if (!result) return;
 
+      // One comment per photo: nothing left to type here.
       commentRequest.current += 1;
-      setComments(result.comments);
-      setInteraction((current) =>
-        current ? { ...current, spotId: result.spotId, mode: "comments" } : current,
-      );
+      closePanel();
     },
-    [busy, interaction, onComment],
+    [busy, closePanel, interaction, onComment],
   );
 
   /* ---- gestures on the photo surface ---- */

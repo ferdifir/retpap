@@ -1,10 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import {
-  MAX_REACTIONS_PER_SPOT,
-  findSpotAt,
-  sortReactionSummary,
-  type ReactionSummary,
-} from "@/lib/reaction-rules";
+import { findSpotAt, sortReactionSummary, type ReactionSummary } from "@/lib/reaction-rules";
 import { getDb, type Db } from "./client";
 import { comments, photos, ratings, reactions, spots, users } from "./schema";
 
@@ -153,6 +148,28 @@ export async function getSpotSummary(spotId: number, userId: number): Promise<Fe
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+/**
+ * A spot is just a point shared by both layers: it only disappears once it
+ * has neither reactions nor comments left.
+ */
+async function deleteSpotIfEmpty(tx: Tx, spotId: number) {
+  const [remainingReaction] = await tx
+    .select({ id: reactions.id })
+    .from(reactions)
+    .where(eq(reactions.spotId, spotId))
+    .limit(1);
+  if (remainingReaction) return;
+
+  const [remainingComment] = await tx
+    .select({ id: comments.id })
+    .from(comments)
+    .where(eq(comments.spotId, spotId))
+    .limit(1);
+  if (remainingComment) return;
+
+  await tx.delete(spots).where(eq(spots.id, spotId));
+}
+
 type SpotTarget = { spotId?: number; x?: number; y?: number };
 
 /**
@@ -193,7 +210,7 @@ async function resolveSpot(
 export type ReactInput = { spotId?: number; x?: number; y?: number; emoji: string };
 export type ReactOutcome =
   | { ok: true; spotId: number; removed: boolean }
-  | { ok: false; reason: "spot_full" | "spot_not_found" | "invalid_target" };
+  | { ok: false; reason: "spot_not_found" | "invalid_target" };
 
 export async function reactToPhoto(
   photoId: number,
@@ -203,26 +220,6 @@ export async function reactToPhoto(
   const { db } = getDb();
 
   return db.transaction(async (tx) => {
-    // A spot may hold reactions, comments, or both: it only disappears when
-    // both layers are empty.
-    const deleteSpotIfEmpty = async (id: number) => {
-      const [remainingReaction] = await tx
-        .select({ id: reactions.id })
-        .from(reactions)
-        .where(eq(reactions.spotId, id))
-        .limit(1);
-      if (remainingReaction) return;
-
-      const [remainingComment] = await tx
-        .select({ id: comments.id })
-        .from(comments)
-        .where(eq(comments.spotId, id))
-        .limit(1);
-      if (remainingComment) return;
-
-      await tx.delete(spots).where(eq(spots.id, id));
-    };
-
     // Serialise reactions for one photo so the capacity check is race-free.
     const [photo] = await tx.select().from(photos).where(eq(photos.id, photoId)).for("update");
     if (!photo) return { ok: false, reason: "invalid_target" } as const;
@@ -238,21 +235,8 @@ export async function reactToPhoto(
 
     if (mine && mine.spotId === spotId && mine.emoji === input.emoji) {
       await tx.delete(reactions).where(eq(reactions.id, mine.id));
-      await deleteSpotIfEmpty(spotId);
+      await deleteSpotIfEmpty(tx, spotId);
       return { ok: true, spotId, removed: true } as const;
-    }
-
-    const occupants = await tx
-      .select({ userId: reactions.userId, emoji: reactions.emoji })
-      .from(reactions)
-      .where(eq(reactions.spotId, spotId));
-
-    // The moving user's own row is replaced, so it must not count against the cap.
-    const others = occupants.filter((row) => row.userId !== userId);
-    const distinctOthers = new Set(others.map((row) => row.emoji));
-
-    if (!distinctOthers.has(input.emoji) && distinctOthers.size >= MAX_REACTIONS_PER_SPOT) {
-      return { ok: false, reason: "spot_full" } as const;
     }
 
     if (mine) {
@@ -261,7 +245,7 @@ export async function reactToPhoto(
         .update(reactions)
         .set({ spotId, emoji: input.emoji })
         .where(eq(reactions.id, mine.id));
-      if (previousSpotId !== spotId) await deleteSpotIfEmpty(previousSpotId);
+      if (previousSpotId !== spotId) await deleteSpotIfEmpty(tx, previousSpotId);
     } else {
       await tx.insert(reactions).values({ photoId, spotId, userId, emoji: input.emoji });
     }
@@ -343,24 +327,7 @@ export async function clearReaction(photoId: number, userId: number): Promise<nu
     if (!mine) return null;
 
     await tx.delete(reactions).where(eq(reactions.id, mine.id));
-
-    const [remainingReaction] = await tx
-      .select({ id: reactions.id })
-      .from(reactions)
-      .where(eq(reactions.spotId, mine.spotId))
-      .limit(1);
-
-    const [remainingComment] = remainingReaction
-      ? [null]
-      : await tx
-          .select({ id: comments.id })
-          .from(comments)
-          .where(eq(comments.spotId, mine.spotId))
-          .limit(1);
-
-    if (!remainingReaction && !remainingComment) {
-      await tx.delete(spots).where(eq(spots.id, mine.spotId));
-    }
+    await deleteSpotIfEmpty(tx, mine.spotId);
 
     return mine.spotId;
   });
@@ -415,7 +382,10 @@ export type CommentOutcome =
   | { ok: true; spotId: number }
   | { ok: false; reason: "spot_not_found" | "invalid_target" };
 
-/** Adds a comment to an existing spot, or to a new one at the given point. */
+/**
+ * One comment per user per photo, exactly like reactions: a new comment on a
+ * different point moves the existing row instead of adding a second one.
+ */
 export async function addComment(
   photoId: number,
   userId: number,
@@ -429,6 +399,21 @@ export async function addComment(
 
     const resolved = await resolveSpot(tx, photo, input);
     if (!resolved.ok) return resolved;
+
+    const [mine] = await tx
+      .select()
+      .from(comments)
+      .where(and(eq(comments.photoId, photoId), eq(comments.userId, userId)));
+
+    if (mine) {
+      const previousSpotId = mine.spotId;
+      await tx
+        .update(comments)
+        .set({ spotId: resolved.spotId, body: input.body, createdAt: new Date() })
+        .where(eq(comments.id, mine.id));
+      if (previousSpotId !== resolved.spotId) await deleteSpotIfEmpty(tx, previousSpotId);
+      return { ok: true, spotId: resolved.spotId } as const;
+    }
 
     await tx.insert(comments).values({
       photoId,
@@ -445,6 +430,7 @@ export async function addComment(
 export async function getSpotComments(
   photoId: number,
   spotId: number,
+  userId: number,
   limit = 50,
 ): Promise<FeedComment[]> {
   const { db } = getDb();
@@ -454,6 +440,7 @@ export async function getSpotComments(
       id: comments.id,
       body: comments.body,
       createdAt: comments.createdAt,
+      userId: comments.userId,
       firstName: users.firstName,
       username: users.username,
     })
@@ -467,6 +454,7 @@ export async function getSpotComments(
     id: row.id,
     body: row.body,
     createdAt: row.createdAt.toISOString(),
+    mine: row.userId === userId,
     author: { firstName: row.firstName, username: row.username },
   }));
 }

@@ -31,7 +31,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     return Response.json({ error: "bad_spot" }, { status: 400 });
   }
 
-  return Response.json({ comments: await getSpotComments(photoId, spotId) });
+  return Response.json({ comments: await getSpotComments(photoId, spotId, userId) });
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -62,7 +62,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   return Response.json({
     spotId: outcome.spotId,
-    comments: await getSpotComments(photoId, outcome.spotId),
+    comments: await getSpotComments(photoId, outcome.spotId, userId),
     spots: await getPhotoSpots(photoId, userId),
   });
 }

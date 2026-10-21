@@ -25,10 +25,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!parsed.success) return Response.json({ error: "invalid_body" }, { status: 400 });
 
   const outcome = await reactToPhoto(photoId, userId, parsed.data);
-  if (!outcome.ok) {
-    const status = outcome.reason === "spot_full" ? 409 : 404;
-    return Response.json({ error: outcome.reason }, { status });
-  }
+  if (!outcome.ok) return Response.json({ error: outcome.reason }, { status: 404 });
 
   return Response.json({
     spotId: outcome.spotId,
