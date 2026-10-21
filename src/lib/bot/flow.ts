@@ -1,0 +1,277 @@
+import { clearUploadSession, createPhoto, getUploadSession, saveUploadSession } from "@/db/upload";
+import type { TelegramUser } from "@/types/telegram";
+import {
+  answerCallbackQuery,
+  downloadFile,
+  editMessageCaption,
+  getFile,
+  sendMessage,
+  sendPhoto,
+} from "./api";
+import { mediaUrl, savePhoto } from "./media";
+import type { BotMessage, BotUpdate, InlineKeyboardMarkup } from "./types";
+
+const MAX_CAPTION_LENGTH = 500;
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+
+function appUrl(): string {
+  return (process.env.APP_URL ?? "https://bot.linkviu.my.id").replace(/\/$/, "");
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function openAppKeyboard(): InlineKeyboardMarkup {
+  return { inline_keyboard: [[{ text: "Buka Rate PAP", web_app: { url: appUrl() } }]] };
+}
+
+function confirmKeyboard(): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [
+        { text: "✅ Terbitkan", callback_data: "publish" },
+        { text: "✕ Batal", callback_data: "cancel" },
+      ],
+    ],
+  };
+}
+
+const START_TEXT = [
+  "<b>Rate PAP</b>",
+  "",
+  "Kasih nilai foto orang lain, atau unggah foto kamu sendiri.",
+  "",
+  "/upload — unggah foto",
+  "/batal — batalkan upload",
+].join("\n");
+
+const ASK_PHOTO_TEXT = [
+  "<b>Langkah 1/2</b>",
+  "",
+  "Kirim fotonya sekarang. Setelah itu saya minta caption.",
+  "",
+  "Ketik /batal kalau berubah pikiran.",
+].join("\n");
+
+const ASK_CAPTION_TEXT = [
+  "<b>Langkah 2/2</b>",
+  "",
+  "Sekarang kirim caption untuk foto ini (teks biasa, maksimal " + MAX_CAPTION_LENGTH + " karakter).",
+  "",
+  "Ketik /batal kalau berubah pikiran.",
+].join("\n");
+
+function confirmText(caption: string): string {
+  return [
+    "<b>Konfirmasi upload</b>",
+    "",
+    "Caption: <i>" + escapeHtml(caption) + "</i>",
+    "",
+    "Terbitkan sekarang? Foto akan muncul di feed dan bisa dinilai semua orang.",
+  ].join("\n");
+}
+
+function commandOf(text: string | undefined): string | null {
+  if (!text || !text.startsWith("/")) return null;
+  return text.slice(1).split(/[\s@]/)[0].toLowerCase();
+}
+
+async function startUpload(chatId: number, telegramId: number): Promise<void> {
+  await saveUploadSession({
+    telegramId,
+    step: "photo",
+    fileId: null,
+    imageWidth: null,
+    imageHeight: null,
+    caption: null,
+  });
+  await sendMessage(chatId, ASK_PHOTO_TEXT);
+}
+
+async function cancelUpload(chatId: number, telegramId: number): Promise<void> {
+  await clearUploadSession(telegramId);
+  await sendMessage(chatId, "Upload dibatalkan.");
+}
+
+async function showConfirmation(chatId: number, fileId: string, caption: string): Promise<void> {
+  await sendPhoto(chatId, fileId, { caption: confirmText(caption), keyboard: confirmKeyboard() });
+}
+
+async function handlePhoto(message: BotMessage, user: TelegramUser): Promise<void> {
+  const sizes = message.photo ?? [];
+  // Telegram sends the sizes ascending, so the last entry is the largest.
+  const largest = sizes[sizes.length - 1];
+  if (!largest) return;
+
+  if (largest.file_size && largest.file_size > MAX_PHOTO_BYTES) {
+    await sendMessage(message.chat.id, "Fotonya terlalu besar. Kirim ulang sebagai foto biasa (bukan file), ya.");
+    return;
+  }
+
+  const caption = message.caption?.trim() ?? "";
+
+  if (caption.length > MAX_CAPTION_LENGTH) {
+    await sendMessage(
+      message.chat.id,
+      "Caption kepanjangan (" + caption.length + " karakter, maksimal " + MAX_CAPTION_LENGTH + "). Kirim ulang fotonya dengan caption yang lebih pendek.",
+    );
+    return;
+  }
+
+  await saveUploadSession({
+    telegramId: user.id,
+    step: caption ? "confirm" : "caption",
+    fileId: largest.file_id,
+    imageWidth: largest.width,
+    imageHeight: largest.height,
+    caption: caption || null,
+  });
+
+  if (caption) {
+    await showConfirmation(message.chat.id, largest.file_id, caption);
+    return;
+  }
+
+  await sendPhoto(message.chat.id, largest.file_id, { caption: ASK_CAPTION_TEXT });
+}
+
+async function handleCaption(chatId: number, user: TelegramUser, text: string): Promise<void> {
+  const session = await getUploadSession(user.id);
+  if (!session || !session.fileId) {
+    await sendMessage(chatId, "Sesi upload tidak ditemukan. Kirim /upload untuk mulai.");
+    return;
+  }
+
+  if (text.length > MAX_CAPTION_LENGTH) {
+    await sendMessage(chatId, "Caption maksimal " + MAX_CAPTION_LENGTH + " karakter. Coba lagi.");
+    return;
+  }
+
+  await saveUploadSession({ ...session, step: "confirm", caption: text });
+  await showConfirmation(chatId, session.fileId, text);
+}
+
+async function handleText(message: BotMessage, user: TelegramUser): Promise<void> {
+  const chatId = message.chat.id;
+  const text = message.text?.trim() ?? "";
+  const command = commandOf(text);
+
+  if (command === "start" || command === "help") {
+    await sendMessage(chatId, START_TEXT, { keyboard: openAppKeyboard() });
+    return;
+  }
+
+  if (command === "upload" || command === "tambah") {
+    await startUpload(chatId, user.id);
+    return;
+  }
+
+  if (command === "batal" || command === "cancel") {
+    await cancelUpload(chatId, user.id);
+    return;
+  }
+
+  const session = await getUploadSession(user.id);
+
+  if (!session) {
+    await sendMessage(chatId, "Kirim /upload untuk mengunggah foto.");
+    return;
+  }
+
+  if (session.step === "photo") {
+    await sendMessage(chatId, "Saya masih menunggu fotonya. Kirim sebagai foto, bukan teks. /batal untuk membatalkan.");
+    return;
+  }
+
+  if (text.length === 0) {
+    await sendMessage(chatId, "Caption tidak boleh kosong. Kirim teks untuk captionnya.");
+    return;
+  }
+
+  await handleCaption(chatId, user, text);
+}
+
+async function publish(chatId: number, messageId: number, user: TelegramUser): Promise<void> {
+  const session = await getUploadSession(user.id);
+
+  if (!session || session.step !== "confirm" || !session.fileId || !session.caption || !session.imageWidth || !session.imageHeight) {
+    await editMessageCaption(chatId, messageId, "Sesi upload sudah tidak ada. Kirim /upload untuk mulai lagi.");
+    return;
+  }
+
+  try {
+    const file = await getFile(session.fileId);
+    if (!file.file_path) throw new Error("getFile returned no file_path");
+
+    const bytes = await downloadFile(file.file_path);
+    const slug = await savePhoto(bytes);
+
+    await createPhoto({
+      slug,
+      caption: session.caption,
+      imageUrl: mediaUrl(slug),
+      imageWidth: session.imageWidth,
+      imageHeight: session.imageHeight,
+    });
+
+    await clearUploadSession(user.id);
+
+    await editMessageCaption(chatId, messageId, "✅ <b>Terbit!</b>\n\nCaption: <i>" + escapeHtml(session.caption) + "</i>");
+    await sendMessage(chatId, "Fotonya sudah masuk feed. Buka app untuk lihat dan menilai foto lain.", {
+      keyboard: openAppKeyboard(),
+    });
+  } catch (error) {
+    console.error("[bot] publish failed", error);
+    await editMessageCaption(chatId, messageId, "Gagal menyimpan foto. Kirim ulang dengan /upload.");
+  }
+}
+
+async function handleCallback(update: BotUpdate): Promise<void> {
+  const query = update.callback_query;
+  if (!query) return;
+
+  const chatId = query.message?.chat.id;
+  const messageId = query.message?.message_id;
+
+  // Stop the client-side spinner before doing any slow work.
+  await answerCallbackQuery(query.id).catch(() => undefined);
+
+  if (chatId === undefined || messageId === undefined) return;
+
+  if (query.data === "cancel") {
+    await clearUploadSession(query.from.id);
+    await editMessageCaption(chatId, messageId, "Upload dibatalkan.");
+    return;
+  }
+
+  if (query.data === "publish") {
+    await publish(chatId, messageId, query.from);
+  }
+}
+
+/** Entry point for every webhook update. Never throws: the webhook always acks. */
+export async function handleUpdate(update: BotUpdate): Promise<void> {
+  if (update.callback_query) {
+    await handleCallback(update);
+    return;
+  }
+
+  const message = update.message;
+  const user = message?.from;
+  if (!message || !user) return;
+
+  if (message.chat.type !== "private") {
+    await sendMessage(message.chat.id, "Upload hanya bisa lewat chat pribadi dengan bot.");
+    return;
+  }
+
+  if (message.photo && message.photo.length > 0) {
+    await handlePhoto(message, user);
+    return;
+  }
+
+  if (message.text) {
+    await handleText(message, user);
+  }
+}

@@ -15,6 +15,38 @@ npm run dev
 
 Tanpa `TELEGRAM_BOT_TOKEN`, aplikasi tetap jalan di `npm run dev` dengan user dev per browser.
 
+## Upload lewat bot
+
+Tidak ada form upload di dalam Mini App; foto masuk lewat chat bot.
+
+```
+/upload   → bot minta foto
+foto      → bot minta caption
+caption   → preview + tombol Terbitkan / Batal
+```
+
+`/batal` kapan saja untuk reset. Foto yang dikirim beserta caption dalam satu pesan melewati
+langkah caption.
+
+Sesi disimpan di tabel `upload_sessions` (satu per Telegram user), jadi restart pm2 di tengah
+percakapan tidak menghilangkan foto. File baru diunduh dari Telegram saat tombol Terbitkan
+ditekan, disimpan ke `UPLOAD_DIR` (produksi: `/var/lib/retpap/uploads`, sengaja di luar direktori
+app supaya `rsync --delete` tidak menghapusnya), lalu disajikan lewat `GET /media/<slug>`.
+
+Webhook: `POST /api/telegram/webhook`, diautentikasi lewat header
+`X-Telegram-Bot-Api-Secret-Token` yang harus sama dengan `TELEGRAM_WEBHOOK_SECRET`. Daftarkan
+sekali dari server:
+
+```bash
+cd /var/www/retpap
+npm run bot:setup              # buat secret kalau belum ada, lalu setWebhook + setMyCommands
+npm run bot:setup -- --status  # getWebhookInfo
+npm run bot:setup -- --delete  # hapus webhook
+```
+
+Kalau `bot:setup` baru membuat secret, jalankan `pm2 restart retpap --update-env` supaya app
+memakai nilai itu.
+
 ## Deploy
 
 Produksi ada di VPS `root@109.111.53.58:38954`, path `/var/www/retpap`, pm2 `retpap` di port 3010.
@@ -53,7 +85,9 @@ src/
 │   ├── layout.tsx, page.tsx, globals.css
 │   └── api/
 │       ├── session/route.ts            # validasi initData → cookie sesi
+│       ├── telegram/webhook/route.ts   # update bot: /upload, foto, caption
 │       ├── feed/route.ts               # foto + spot + rating
+│       ├── media/[slug]/route.ts       # sajikan foto hasil upload
 │       └── photos/[id]/
 │           ├── reactions/route.ts      # POST toggle/pindah, DELETE
 │           └── rating/route.ts         # PUT upsert
@@ -71,6 +105,7 @@ src/
 │   ├── use-image-box.ts      # kotak gambar hasil object-contain
 │   └── ...
 └── lib/
+    ├── bot/               # api.ts (Bot API), flow.ts (state machine), media.ts
     ├── init-data.ts       # HMAC-SHA256 sesuai docs Telegram
     ├── session.ts         # cookie bertanda tangan
     ├── reaction-rules.ts  # kapasitas, snap radius, urutan

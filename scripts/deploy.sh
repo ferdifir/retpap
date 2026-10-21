@@ -117,6 +117,8 @@ else
   echo "warning: database snapshot failed, continuing" >&2
 fi
 
+mkdir -p /var/lib/retpap/uploads
+
 $INSTALL_CMD
 npx drizzle-kit migrate
 npm run build

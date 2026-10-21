@@ -32,6 +32,29 @@ export const users = pgTable("users", {
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * One in-flight upload per Telegram user. The bot asks for a photo, then a
+ * caption, then shows a confirmation; the row survives restarts so a pm2
+ * reload mid-conversation does not lose the user photo.
+ */
+export const uploadSessions = pgTable(
+  "upload_sessions",
+  {
+    telegramId: bigint("telegram_id", { mode: "number" }).primaryKey(),
+    /** "photo" | "caption" | "confirm" */
+    step: text("step").notNull(),
+    fileId: text("file_id"),
+    imageWidth: integer("image_width"),
+    imageHeight: integer("image_height"),
+    caption: text("caption"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check("upload_sessions_step_valid", sql`${table.step} in ('photo', 'caption', 'confirm')`),
+  ],
+);
+
 export const photos = pgTable(
   "photos",
   {
