@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, TouchEvent } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
@@ -524,8 +525,16 @@ export function PapRater() {
 
   if (loadState === "loading") {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="animate-pulse text-xs font-medium text-slate-400">Memuat…</p>
+      <div className="flex h-full flex-col items-center justify-center gap-4">
+        <Image
+          src="/logo.png"
+          alt="RetPAP"
+          width={104}
+          height={104}
+          priority
+          className="size-[104px] animate-pulse rounded-3xl shadow-2xl shadow-cyan-500/20"
+        />
+        <p className="text-[11px] font-medium tracking-wide text-slate-500">Memuat…</p>
       </div>
     );
   }
