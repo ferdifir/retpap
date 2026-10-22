@@ -394,17 +394,21 @@ export function PapCard({
             </div>
           ) : null}
 
-          <RatingSlider
-            value={rating}
-            dragging={ratingDragging}
-            disabled={!isActive}
-            onDragStart={(clientY, source) => {
-              onInteraction();
-              onRatingStart(clientY, source);
-            }}
-            onKeyDown={onRatingKeyDown}
-            onBlur={onRatingBlur}
-          />
+          {/* Hidden together with the reaction layer: the slider is the drag
+              handle, so keeping it invisible would still swallow taps there. */}
+          {showReactions ? (
+            <RatingSlider
+              value={rating}
+              dragging={ratingDragging}
+              disabled={!isActive}
+              onDragStart={(clientY, source) => {
+                onInteraction();
+                onRatingStart(clientY, source);
+              }}
+              onKeyDown={onRatingKeyDown}
+              onBlur={onRatingBlur}
+            />
+          ) : null}
 
           {isActive && interaction ? (
             <SpotPanel

@@ -523,7 +523,12 @@ export function PapRater() {
         avgRating={activeItem?.rating.avg ?? 0}
         votes={activeItem?.rating.votes ?? 0}
         reactionsVisible={reactionsVisible}
-        onToggleReactions={() => setReactionsVisible((visible) => !visible)}
+        onToggleReactions={() => {
+          // The slider disappears with the layer, so a drag in progress must be
+          // stored instead of being abandoned mid-gesture.
+          if (reactionsVisible && isRatingRef.current) commitRating();
+          setReactionsVisible((visible) => !visible);
+        }}
         onShare={shareCurrentPhoto}
         onInfoClick={() => setIsInfoOpen(true)}
       />
