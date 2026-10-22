@@ -99,6 +99,20 @@ export function initTelegram(): void {
   const resync = () => applySafeArea(webApp);
   webApp.onEvent?.("safeAreaChanged", resync);
   webApp.onEvent?.("contentSafeAreaChanged", resync);
+
+  // Fullscreen makes Telegram's header transparent, so the app can draw its
+  // own brand inside that strip. The flag lets the CSS decide where the brand
+  // lives; without it the layout stays exactly as before.
+  const markFullscreen = (on: boolean) => {
+    document.documentElement.dataset.tgFullscreen = on ? "true" : "false";
+  };
+  markFullscreen(Boolean(webApp.isFullscreen));
+  webApp.onEvent?.("fullscreenChanged", () => {
+    markFullscreen(Boolean(webApp.isFullscreen));
+    applySafeArea(webApp);
+  });
+  webApp.onEvent?.("fullscreenFailed", () => markFullscreen(false));
+  webApp.requestFullscreen?.();
   // Telegram Android otherwise swallows vertical drags to minimise the app.
   webApp.disableVerticalSwipes?.();
   webApp.setHeaderColor?.("#0b0f19");
