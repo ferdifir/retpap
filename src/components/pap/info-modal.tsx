@@ -14,23 +14,23 @@ type InfoModalProps = {
 const TIPS = [
   {
     icon: TapIcon,
-    title: "Tap photo anywhere",
-    body: "to drop pinned emoji reactions on specific spots.",
+    title: "Tap di mana saja pada foto",
+    body: "untuk menempelkan reaksi emoji di titik tertentu.",
   },
   {
     icon: SlidersIcon,
-    title: "Drag vertical slider",
-    body: "on the right side of the photo up/down to give a score.",
+    title: "Geser slider di sisi kanan",
+    body: "naik atau turun untuk memberi nilai.",
   },
   {
     icon: SparklesIcon,
-    title: "Press and hold a reaction",
-    body: "to switch the emoji pinned at that spot. Tap your own reaction again to remove it.",
+    title: "Tekan dan tahan reaksi",
+    body: "untuk mengganti emoji di titik itu. Tap reaksimu sendiri sekali lagi untuk menghapusnya.",
   },
   {
     icon: SwipeIcon,
-    title: "Swipe card vertically",
-    body: "or use Previous/Next buttons to flip cards.",
+    title: "Geser kartu naik-turun",
+    body: "atau pakai tombol Sebelumnya / PAP Berikutnya untuk pindah foto.",
   },
 ];
 
@@ -67,7 +67,7 @@ export function InfoModal({ open, user, onClose }: InfoModalProps) {
           <SparklesIcon className="size-5" />
         </div>
         <h2 id="how-to-use-title" className="mb-2 text-lg font-bold text-white">
-          How to Use
+          Cara Pakai
         </h2>
         <ul className="mb-5 space-y-2.5 text-left text-xs text-slate-300">
           {TIPS.map((tip) => (
@@ -81,7 +81,7 @@ export function InfoModal({ open, user, onClose }: InfoModalProps) {
         </ul>
         {user ? (
           <p className="mb-3 text-[10px] text-slate-500">
-            Signed in as {user.firstName}
+            Masuk sebagai {user.firstName}
             {user.username ? ` (@${user.username})` : ""}
           </p>
         ) : null}
@@ -90,7 +90,7 @@ export function InfoModal({ open, user, onClose }: InfoModalProps) {
           onClick={onClose}
           className="w-full rounded-xl border border-slate-600 bg-slate-800 py-2.5 text-xs font-semibold text-white transition-all hover:bg-slate-700 active:scale-95"
         >
-          Got it!
+          Mengerti
         </button>
       </div>
     </div>

@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   applicationName: "Rate PAP",
   openGraph: {
     title: "Rate PAP — Telegram Mini App",
-    description: "Tap to react, drag to rate, swipe to flip.",
+    description: "Tap untuk bereaksi, geser untuk menilai, usap untuk pindah foto.",
     type: "website",
   },
 };

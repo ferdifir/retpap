@@ -28,7 +28,7 @@ export function getRatingTone(score: number): RatingTone {
     return {
       fill: "bg-gradient-to-t from-red-600 to-orange-500",
       emoji: "❄️",
-      label: "Not for me",
+      label: "Kurang",
     };
   }
 
@@ -36,17 +36,17 @@ export function getRatingTone(score: number): RatingTone {
     return {
       fill: "bg-gradient-to-t from-orange-500 to-amber-400",
       emoji: "🔥",
-      label: "Pretty good",
+      label: "Lumayan",
     };
   }
 
   return {
     fill: "bg-gradient-to-t from-emerald-500 to-green-400",
     emoji: "⚡️",
-    label: "Outstanding",
+    label: "Luar biasa",
   };
 }
 
 export function formatVotes(votes: number): string {
-  return `${votes.toLocaleString("en-US")} votes overall`;
+  return `${votes.toLocaleString("id-ID")} penilaian`;
 }

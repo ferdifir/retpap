@@ -458,7 +458,7 @@ export function PapCard({
               className="glass-panel flex flex-1 items-center justify-center gap-1 rounded-xl py-2 text-xs font-semibold text-slate-300 transition-all hover:bg-slate-800 active:scale-95 disabled:opacity-40"
             >
               <ChevronUpIcon className="size-2.5 text-cyan-400" />
-              <span>Previous</span>
+              <span>Sebelumnya</span>
             </button>
             <button
               type="button"
@@ -466,7 +466,7 @@ export function PapCard({
               disabled={!canGoNext}
               className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 py-2 text-xs font-semibold text-white shadow-lg shadow-cyan-500/20 transition-all active:scale-95 disabled:opacity-40"
             >
-              <span>Next PAP</span>
+              <span>PAP Berikutnya</span>
               <ChevronDownIcon className="size-2.5" />
             </button>
           </div>

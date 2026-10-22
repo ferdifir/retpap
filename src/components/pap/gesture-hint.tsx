@@ -15,7 +15,7 @@ export function GestureHint({ visible }: GestureHintProps) {
     >
       <div className="glass-panel flex items-center gap-2 rounded-full border border-cyan-500/30 px-3 py-1.5 text-[11px] text-slate-300 shadow-xl">
         <span className="inline-block animate-bounce">👇</span>
-        <span>Tap photo to react • Hold a reaction to switch emoji • Drag slider to rate</span>
+        <span>Tap foto untuk bereaksi • Tahan untuk ganti emoji • Geser slider untuk menilai</span>
       </div>
     </div>
   );

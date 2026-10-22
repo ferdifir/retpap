@@ -557,7 +557,7 @@ export function PapRater() {
       />
 
       <section
-        aria-label="Photo rating deck"
+        aria-label="Tumpukan foto untuk dinilai"
         className="scene relative min-h-0 flex-1 touch-none overflow-hidden rounded-3xl"
         onPointerDown={handleSwipeStart}
         onPointerMove={handleSwipeMove}

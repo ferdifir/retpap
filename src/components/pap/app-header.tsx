@@ -67,7 +67,7 @@ export function AppHeader({
         <button
           type="button"
           onClick={onInfoClick}
-          aria-label="How to use this app"
+          aria-label="Cara pakai aplikasi"
           className="glass-pill flex size-8 items-center justify-center rounded-full text-slate-300 transition-transform hover:text-white active:scale-95"
         >
           <InfoIcon className="size-3.5" />

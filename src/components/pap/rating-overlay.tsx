@@ -25,7 +25,7 @@ export function RatingOverlay({ rating, visible, settled }: RatingOverlayProps) 
         )}
       >
         <span className="mb-1 text-xs font-bold uppercase tracking-widest text-slate-300">
-          Your Rating
+          Nilaimu
         </span>
         <span className="text-6xl font-black tracking-tight text-white drop-shadow-md tabular-nums">
           {rating.toFixed(1)}
