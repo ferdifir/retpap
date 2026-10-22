@@ -6,6 +6,7 @@ import { EMOJI_OPTIONS } from "@/lib/data";
 import { MAX_COMMENT_LENGTH } from "@/lib/comment-rules";
 import { cn } from "@/lib/cn";
 import type { FeedComment, FeedSpot } from "@/lib/feed-types";
+import { CaptionText } from "./caption-text";
 
 export type PanelMode = "chooser" | "emoji" | "comments" | "composer";
 
@@ -396,7 +397,9 @@ function CommentLine({ comment, onDelete }: { comment: FeedComment; onDelete?: (
           </button>
         ) : null}
       </div>
-      <p className="mt-1 text-[11px] leading-snug break-words text-slate-300">{comment.body}</p>
+      <p className="mt-1 text-[11px] leading-snug break-words text-slate-300">
+        <CaptionText text={comment.body} />
+      </p>
     </div>
   );
 }
