@@ -50,7 +50,7 @@ export function RatingSlider({
       ref={trackRef}
       role="slider"
       tabIndex={disabled ? -1 : 0}
-      aria-label="Rate this photo"
+      aria-label="Beri nilai foto ini"
       aria-valuemin={1}
       aria-valuemax={10}
       aria-valuenow={value}

@@ -31,10 +31,10 @@ function escapeHtml(value: string): string {
  */
 function openAppKeyboard(slug?: string): InlineKeyboardMarkup {
   if (slug) {
-    return { inline_keyboard: [[{ text: "Buka Rate PAP", url: shareUrlFor(slug) }]] };
+    return { inline_keyboard: [[{ text: "Buka RetPAP", url: shareUrlFor(slug) }]] };
   }
 
-  return { inline_keyboard: [[{ text: "Buka Rate PAP", web_app: { url: appUrl() } }]] };
+  return { inline_keyboard: [[{ text: "Buka RetPAP", web_app: { url: appUrl() } }]] };
 }
 
 function confirmKeyboard(): InlineKeyboardMarkup {
@@ -49,7 +49,7 @@ function confirmKeyboard(): InlineKeyboardMarkup {
 }
 
 const START_TEXT = [
-  "<b>Rate PAP</b>",
+  "<b>RetPAP</b>",
   "",
   "Kasih nilai foto orang lain, atau unggah foto kamu sendiri.",
   "",

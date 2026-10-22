@@ -1,4 +1,4 @@
-# Prompt Logo Rate PAP
+# Prompt Logo RetPAP
 
 Logo harus satu ide, bentuk sederhana, tetap terbaca di 32px. Semua prompt
 berbahasa Inggris karena model gambar lebih patuh.
@@ -43,4 +43,4 @@ berbahasa Inggris karena model gambar lebih patuh.
 - Maksimal 2–3 warna supaya tetap terbaca di avatar bot 64px dan favicon 32px.
 - Kalau hasilnya masih ramai, tambahkan: `simplify to a single silhouette,
   maximum 5 shapes`.
-- Simpan versi tanpa teks; nama "Rate PAP" cukup di UI, jangan di dalam gambar.
+- Simpan versi tanpa teks; nama "RetPAP" cukup di UI, jangan di dalam gambar.

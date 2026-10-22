@@ -17,7 +17,7 @@ export function shareUrlFor(slug: string): string {
 
 /** Telegram share sheet prefilled with the deep link and a short blurb. */
 export function telegramShareLink(slug: string, caption: string): string {
-  const text = caption ? caption + " — nilai di Rate PAP" : "Nilai foto ini di Rate PAP";
+  const text = caption ? caption + " — nilai di RetPAP" : "Nilai foto ini di RetPAP";
   return (
     "https://t.me/share/url?url=" +
     encodeURIComponent(shareUrlFor(slug)) +

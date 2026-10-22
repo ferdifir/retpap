@@ -1,6 +1,6 @@
 # Spesifikasi ikon tier rating (1–10)
 
-Brief produksi untuk 10 ikon nilai rating "Rate PAP". Tujuannya supaya ikon bisa digambar ulang
+Brief produksi untuk 10 ikon nilai rating "RetPAP". Tujuannya supaya ikon bisa digambar ulang
 (oleh ilustrator atau generator gambar) tanpa kehilangan kesatuan keluarga bentuk.
 
 Konteks pemakaian:

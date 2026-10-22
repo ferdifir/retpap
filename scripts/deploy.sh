@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Deploy Rate PAP to the VPS.
+# Deploy RetPAP to the VPS.
 #
 #   npm run deploy              # sync, migrate, build, restart, health check
 #   npm run deploy -- --dry-run # show what rsync would change, do nothing else

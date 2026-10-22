@@ -94,7 +94,7 @@ await call("setMyCommands", {
   commands: [
     { command: "upload", description: "Unggah foto untuk dinilai" },
     { command: "batal", description: "Batalkan upload yang sedang berjalan" },
-    { command: "start", description: "Buka Rate PAP" },
+    { command: "start", description: "Buka RetPAP" },
   ],
 });
 

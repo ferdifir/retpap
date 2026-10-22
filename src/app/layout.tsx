@@ -10,12 +10,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Rate PAP — Telegram Mini App",
+  title: "RetPAP — Telegram Mini App",
   description:
     "Tap a photo to drop emoji reactions, drag the vertical slider to score it, and flip through cards.",
-  applicationName: "Rate PAP",
+  applicationName: "RetPAP",
   openGraph: {
-    title: "Rate PAP — Telegram Mini App",
+    title: "RetPAP — Telegram Mini App",
     description: "Tap untuk bereaksi, geser untuk menilai, usap untuk pindah foto.",
     type: "website",
   },
