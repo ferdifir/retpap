@@ -13,7 +13,6 @@ import { orderForSharedPhoto, readSharedSlug, telegramShareLink } from "@/lib/sh
 import { getTelegramWebApp, haptic } from "@/lib/telegram";
 import type { InputSource, SpotTarget } from "@/lib/types";
 import { AppHeader } from "./app-header";
-import { GestureHint } from "./gesture-hint";
 import { StartGate } from "./start-gate";
 import { InfoModal } from "./info-modal";
 import { PapCard } from "./pap-card";
@@ -54,7 +53,6 @@ export function PapRater() {
   const [isRating, setIsRating] = useState(false);
   const [justRated, setJustRated] = useState(false);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
-  const [hasInteracted, setHasInteracted] = useState(false);
   // Photos open clean: reactions stay hidden until the toggle is used.
   const [reactionsVisible, setReactionsVisible] = useState(true);
   const [needsStart, setNeedsStart] = useState(false);
@@ -194,7 +192,6 @@ export function PapRater() {
     dragOrigin.current = { y: clientY, rating: ratingRef.current };
     setIsRating(true);
     setJustRated(false);
-    setHasInteracted(true);
     haptic("impact");
   }, []);
 
@@ -265,7 +262,6 @@ export function PapRater() {
         isRatingRef.current = true;
         setIsRating(true);
         setJustRated(false);
-        setHasInteracted(true);
       }
 
       setRatingValue(roundRating(clampRating(ratingRef.current + delta)));
@@ -350,7 +346,6 @@ export function PapRater() {
       const photo = photosRef.current?.[index];
       if (!photo) return null;
 
-      setHasInteracted(true);
       // Reacting means you want to see reactions; otherwise the tap looks ignored.
       setReactionsVisible(true);
 
@@ -392,7 +387,6 @@ export function PapRater() {
       const photo = photosRef.current?.[index];
       if (!photo) return null;
 
-      setHasInteracted(true);
 
       try {
         const response = await fetch("/api/photos/" + photo.id + "/comments", {
@@ -531,8 +525,6 @@ export function PapRater() {
     swipe.current.active = false;
   };
 
-  const handleInteraction = useCallback(() => setHasInteracted(true), []);
-
   const shareCurrentPhoto = useCallback(() => {
     const photo = photosRef.current?.[currentIndex];
     if (!photo) return;
@@ -628,12 +620,10 @@ export function PapRater() {
               onRatingBlur={commitRating}
               onPrevious={() => flipTo(currentIndex - 1)}
               onNext={() => flipTo(currentIndex + 1)}
-              onInteraction={handleInteraction}
             />
           ))}
         </div>
 
-        <GestureHint visible={!hasInteracted} />
         <RatingOverlay rating={rating} visible={isRating || justRated} settled={justRated} />
       </section>
 

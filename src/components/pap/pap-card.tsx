@@ -46,7 +46,6 @@ type PapCardProps = {
   onRatingBlur: () => void;
   onPrevious: () => void;
   onNext: () => void;
-  onInteraction: () => void;
 };
 
 const TRANSFORMS: Record<CardPosition, string> = {
@@ -76,7 +75,6 @@ export function PapCard({
   onRatingBlur,
   onPrevious,
   onNext,
-  onInteraction,
 }: PapCardProps) {
   const isActive = position === "active";
   const [ripple, setRipple] = useState<RippleState | null>(null);
@@ -131,10 +129,9 @@ export function PapCard({
 
       setInteraction({ xPct: target.x, yPct: target.y, spotId: target.id, mode: next });
       if (next === "comments") void loadComments(target.id);
-      onInteraction();
       haptic("selection");
     },
-    [loadComments, onInteraction],
+    [loadComments],
   );
 
   const openPoint = useCallback(
@@ -146,10 +143,9 @@ export function PapCard({
 
       setInteraction({ xPct, yPct, spotId: snapped, mode: nextMode });
       if (nextMode === "comments" && snapped !== null) void loadComments(snapped);
-      onInteraction();
       haptic(nextMode === "composer" || nextMode === "comments" ? "impact" : "selection");
     },
-    [aspect, item.spots, loadComments, onInteraction],
+    [aspect, item.spots, loadComments],
   );
 
   const closePanel = useCallback(() => {
@@ -412,7 +408,6 @@ export function PapCard({
               dragging={ratingDragging}
               disabled={!isActive}
               onDragStart={(clientY, source) => {
-                onInteraction();
                 onRatingStart(clientY, source);
               }}
               onKeyDown={onRatingKeyDown}

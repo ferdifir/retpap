@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import { SlidersIcon, SparklesIcon, SwipeIcon, TapIcon } from "@/components/icons";
+import {
+  CommentIcon,
+  SlidersIcon,
+  SparklesIcon,
+  SwipeIcon,
+  TapIcon,
+  UploadIcon,
+} from "@/components/icons";
 import { cn } from "@/lib/cn";
 import type { FeedUser } from "@/lib/feed-types";
 
@@ -14,23 +21,33 @@ type InfoModalProps = {
 const TIPS = [
   {
     icon: TapIcon,
-    title: "Tap di mana saja pada foto",
-    body: "untuk menempelkan reaksi emoji di titik tertentu.",
+    title: "Tap foto",
+    body: "menempelkan reaksi emoji di titik itu.",
   },
   {
-    icon: SlidersIcon,
-    title: "Geser slider di sisi kanan",
-    body: "naik atau turun untuk memberi nilai.",
+    icon: CommentIcon,
+    title: "Tahan foto",
+    body: "menulis komentar di titik itu.",
   },
   {
     icon: SparklesIcon,
-    title: "Tekan dan tahan reaksi",
-    body: "untuk mengganti emoji di titik itu. Tap reaksimu sendiri sekali lagi untuk menghapusnya.",
+    title: "Tap marker",
+    body: "membuka reaksi dan komentar di titik itu. Tahan marker untuk langsung ke komentar.",
+  },
+  {
+    icon: SlidersIcon,
+    title: "Geser slider kanan",
+    body: "memberi nilai 1 sampai 10.",
   },
   {
     icon: SwipeIcon,
-    title: "Geser kartu naik-turun",
-    body: "atau pakai tombol Sebelumnya / PAP Berikutnya untuk pindah foto.",
+    title: "Geser kartu",
+    body: "pindah ke foto berikutnya atau sebelumnya.",
+  },
+  {
+    icon: UploadIcon,
+    title: "Upload PAP",
+    body: "lewat bot: /upload, kirim foto, kirim caption, lalu tekan Terbitkan.",
   },
 ];
 
@@ -79,6 +96,10 @@ export function InfoModal({ open, user, onClose }: InfoModalProps) {
             </li>
           ))}
         </ul>
+        <p className="mb-4 text-[10px] leading-relaxed text-slate-500">
+          Satu reaksi dan satu komentar per foto. Memilih titik lain akan memindahkannya, dan
+          komentarmu bisa dihapus kapan saja.
+        </p>
         {user ? (
           <p className="mb-3 text-[10px] text-slate-500">
             Masuk sebagai {user.firstName}
