@@ -7,7 +7,7 @@ import {
   upsertUser,
 } from "@/db/queries";
 import { clearUploadSession, createPhoto, getUploadSession, saveUploadSession } from "@/db/upload";
-import { shareUrlFor } from "@/lib/share";
+import { shareUrlFor, uploadUrl } from "@/lib/share";
 import type { TelegramUser } from "@/types/telegram";
 import {
   answerCallbackQuery,
@@ -57,7 +57,7 @@ function confirmKeyboard(): InlineKeyboardMarkup {
   };
 }
 
-const CHANNEL_CTA = "Rate foto ini di sini 👇";
+const CHANNEL_CTA = "Rate foto ini, atau upload punyamu 👇";
 
 /** Photo caption for the channel: the upload, then one line pointing at the app. */
 function channelCaption(caption: string): string {
@@ -84,7 +84,14 @@ async function postToChannel(photoId: number, slug: string, fileId: string, capt
   try {
     const message = await sendPhoto(channelId(), fileId, {
       caption: channelCaption(caption),
-      keyboard: { inline_keyboard: [[{ text: "Beri nilai", url: shareUrlFor(slug) }]] },
+      keyboard: {
+        inline_keyboard: [
+          [
+            { text: "Beri nilai", url: shareUrlFor(slug) },
+            { text: "Upload", url: uploadUrl() },
+          ],
+        ],
+      },
     });
     await markChannelPost(photoId, message.message_id);
   } catch (error) {
@@ -260,6 +267,14 @@ async function handleText(message: BotMessage, user: TelegramUser): Promise<void
   const command = commandOf(text);
 
   if (command === "start" || command === "help") {
+    // The channel CTA uses t.me/<bot>?start=upload, which arrives as "/start upload".
+    const payload = text.split(/\s+/)[1]?.toLowerCase() ?? "";
+    if (payload === "upload") {
+      if (!(await requireChannel(chatId, user.id))) return;
+      await startUpload(chatId, user.id);
+      return;
+    }
+
     await sendMessage(chatId, START_TEXT, { keyboard: openAppKeyboard() });
     return;
   }

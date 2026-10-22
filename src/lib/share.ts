@@ -10,6 +10,11 @@ export function botStartUrl(): string {
   return "https://t.me/" + BOT_USERNAME + "?start=app";
 }
 
+/** Deep link that opens the bot chat and jumps straight into /upload. */
+export function uploadUrl(): string {
+  return "https://t.me/" + BOT_USERNAME + "?start=upload";
+}
+
 /** Deep link that opens the Mini App on one photo. */
 export function shareUrlFor(slug: string): string {
   return "https://t.me/" + BOT_USERNAME + "?startapp=" + encodeURIComponent(slug);
