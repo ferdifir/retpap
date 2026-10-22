@@ -1,4 +1,4 @@
-import { markBotStarted } from "@/db/queries";
+import { markBotStarted, setNotifyByTelegram, toggleNotifyByTelegram, upsertUser } from "@/db/queries";
 import { clearUploadSession, createPhoto, getUploadSession, saveUploadSession } from "@/db/upload";
 import { shareUrlFor } from "@/lib/share";
 import type { TelegramUser } from "@/types/telegram";
@@ -190,6 +190,17 @@ async function handleText(message: BotMessage, user: TelegramUser): Promise<void
     return;
   }
 
+  if (command === "notif") {
+    const enabled = await toggleNotifyByTelegram(user.id);
+    await sendMessage(
+      chatId,
+      enabled
+        ? "Notifikasi dinyalakan. Kamu akan dapat kabar saat fotomu dinilai atau dikomentari."
+        : "Notifikasi dimatikan. Ketik /notif lagi untuk menyalakan.",
+    );
+    return;
+  }
+
   const session = await getUploadSession(user.id);
 
   if (!session) {
@@ -225,12 +236,22 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
     const bytes = await downloadFile(file.file_path);
     const slug = await savePhoto(bytes);
 
+    // The uploader becomes the owner, so later activity can reach them.
+    const owner = await upsertUser({
+      telegramId: user.id,
+      firstName: user.first_name,
+      username: user.username,
+      lastName: user.last_name,
+      languageCode: user.language_code,
+    });
+
     await createPhoto({
       slug,
       caption: session.caption,
       imageUrl: mediaUrl(slug),
       imageWidth: session.imageWidth,
       imageHeight: session.imageHeight,
+      userId: owner.id,
     });
 
     await clearUploadSession(user.id);
@@ -265,6 +286,12 @@ async function handleCallback(update: BotUpdate): Promise<void> {
 
   if (query.data === "publish") {
     await publish(chatId, messageId, query.from);
+    return;
+  }
+
+  if (query.data === "notif:off") {
+    await setNotifyByTelegram(query.from.id, false);
+    await sendMessage(chatId, "Notifikasi dimatikan. Ketik /notif untuk menyalakan lagi.");
   }
 }
 

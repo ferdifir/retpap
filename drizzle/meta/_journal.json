@@ -36,6 +36,13 @@
       "when": 1792640493435,
       "tag": "0004_outstanding_gideon",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792644537367,
+      "tag": "0005_organic_deathstrike",
+      "breakpoints": true
     }
   ]
 }

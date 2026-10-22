@@ -28,6 +28,8 @@ export const users = pgTable("users", {
   languageCode: text("language_code"),
   isPremium: boolean("is_premium").notNull().default(false),
   photoUrl: text("photo_url"),
+  /** Uploader notifications about reactions, comments and ratings. */
+  notify: boolean("notify").notNull().default(true),
   /** Set the first time the user talks to the bot; gates the Mini App. */
   startedAt: timestamp("started_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -67,11 +69,18 @@ export const photos = pgTable(
     imageWidth: integer("image_width").notNull(),
     imageHeight: integer("image_height").notNull(),
     isActive: boolean("is_active").notNull().default(true),
+    /** Uploader; null for photos published before ownership existed. */
+    userId: bigint("user_id", { mode: "number" }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** Last time a reaction/rating digest went out for this photo. */
+    lastDigestAt: timestamp("last_digest_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     check("photos_width_positive", sql`${table.imageWidth} > 0`),
     check("photos_height_positive", sql`${table.imageHeight} > 0`),
+    index("photos_user_idx").on(table.userId),
   ],
 );
 
@@ -166,5 +175,36 @@ export const ratings = pgTable(
   (table) => [
     primaryKey({ columns: [table.photoId, table.userId] }),
     check("ratings_score_range", sql`${table.score} between 1 and 10`),
+  ],
+);
+
+/**
+ * Outbox for uploader notifications. Rows are written inside the same
+ * transaction as the action, then delivered by the cron sweep, so a failed
+ * Telegram call is retried instead of lost.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: identity(),
+    userId: bigint("user_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    photoId: bigint("photo_id", { mode: "number" })
+      .notNull()
+      .references(() => photos.id, { onDelete: "cascade" }),
+    /** "comment" | "digest" */
+    kind: text("kind").notNull(),
+    /** Idempotency key, e.g. "comment:12". */
+    dedupeKey: text("dedupe_key").notNull().unique(),
+    body: text("body").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("notifications_pending_idx").on(table.userId, table.sentAt),
+    check("notifications_kind_valid", sql`${table.kind} in ('comment', 'digest')`),
   ],
 );

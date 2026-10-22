@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { commentNotificationBody } from "@/lib/bot/format";
 import { findSpotAt, sortReactionSummary, type ReactionSummary } from "@/lib/reaction-rules";
 import { getDb, type Db } from "./client";
-import { comments, photos, ratings, reactions, spots, users } from "./schema";
+import { comments, notifications, photos, ratings, reactions, spots, users } from "./schema";
 
 import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
 
@@ -365,6 +366,122 @@ export async function clearReaction(photoId: number, userId: number): Promise<nu
   });
 }
 
+export type PendingNotification = {
+  id: number;
+  userId: number;
+  telegramId: number;
+  kind: string;
+  body: string;
+  slug: string;
+  attempts: number;
+};
+
+/** Oldest unsent notifications, joined with the data the sender needs. */
+export async function takePendingNotifications(limit = 20): Promise<PendingNotification[]> {
+  const { db } = getDb();
+
+  const rows = await db
+    .select({
+      id: notifications.id,
+      userId: notifications.userId,
+      telegramId: users.telegramId,
+      kind: notifications.kind,
+      body: notifications.body,
+      slug: photos.slug,
+      attempts: notifications.attempts,
+    })
+    .from(notifications)
+    .innerJoin(users, eq(users.id, notifications.userId))
+    .innerJoin(photos, eq(photos.id, notifications.photoId))
+    .where(and(isNull(notifications.sentAt), lt(notifications.attempts, 5)))
+    .orderBy(notifications.id)
+    .limit(limit);
+
+  return rows;
+}
+
+export async function markNotificationSent(id: number): Promise<void> {
+  const { db } = getDb();
+  await db.update(notifications).set({ sentAt: new Date() }).where(eq(notifications.id, id));
+}
+
+export async function markNotificationFailed(id: number, error: string): Promise<void> {
+  const { db } = getDb();
+  await db
+    .update(notifications)
+    .set({ attempts: sql`${notifications.attempts} + 1`, error })
+    .where(eq(notifications.id, id));
+}
+
+export async function setNotify(userId: number, enabled: boolean): Promise<void> {
+  const { db } = getDb();
+  await db.update(users).set({ notify: enabled }).where(eq(users.id, userId));
+}
+
+export async function setNotifyByTelegram(telegramId: number, enabled: boolean): Promise<void> {
+  const { db } = getDb();
+  await db.update(users).set({ notify: enabled }).where(eq(users.telegramId, telegramId));
+}
+
+/** Flips the switch and reports the new state. */
+export async function toggleNotifyByTelegram(telegramId: number): Promise<boolean> {
+  const { db } = getDb();
+  const [row] = await db
+    .select({ notify: users.notify })
+    .from(users)
+    .where(eq(users.telegramId, telegramId));
+
+  const next = !(row?.notify ?? true);
+  await db.update(users).set({ notify: next }).where(eq(users.telegramId, telegramId));
+  return next;
+}
+
+export type DigestCandidate = {
+  photoId: number;
+  userId: number;
+  telegramId: number;
+  slug: string;
+  reactions: number;
+  ratings: number;
+  comments: number;
+};
+
+/**
+ * Photos with fresh activity and an owner who still wants notifications.
+ * Digests are throttled to one per photo per 15 minutes.
+ */
+export async function listDigestCandidates(limit = 10): Promise<DigestCandidate[]> {
+  const { db } = getDb();
+
+  const result = await db.execute(sql`
+    with base as (
+      select p.id, p.slug, p.user_id, u.telegram_id,
+             coalesce(p.last_digest_at, p.created_at) as since
+      from photos p
+      join users u on u.id = p.user_id
+      where p.is_active
+        and u.notify
+        and coalesce(p.last_digest_at, p.created_at) < now() - interval '15 minutes'
+    )
+    select b.id as "photoId", b.user_id as "userId", b.telegram_id as "telegramId", b.slug,
+      (select count(*)::int from reactions r where r.photo_id = b.id and r.created_at > b.since) as reactions,
+      (select count(*)::int from ratings ra where ra.photo_id = b.id and ra.updated_at > b.since) as ratings,
+      (select count(*)::int from comments c where c.photo_id = b.id and c.created_at > b.since) as comments
+    from base b
+    order by b.id
+    limit ${limit}
+  `);
+
+  return (result.rows as unknown as DigestCandidate[]).filter(
+    (row) => row.reactions + row.ratings + row.comments > 0,
+  );
+}
+
+export async function markDigestSent(photoId: number): Promise<void> {
+  const { db } = getDb();
+  await db.update(photos).set({ lastDigestAt: new Date() }).where(eq(photos.id, photoId));
+}
+
 /** Rebuilds every spot of one photo. Used to reconcile after a write. */
 export async function getPhotoSpots(photoId: number, userId: number): Promise<FeedSpot[]> {
   const { db } = getDb();
@@ -447,12 +564,41 @@ export async function addComment(
       return { ok: true, spotId: resolved.spotId } as const;
     }
 
-    await tx.insert(comments).values({
-      photoId,
-      spotId: resolved.spotId,
-      userId,
-      body: input.body,
-    });
+    const [inserted] = await tx
+      .insert(comments)
+      .values({
+        photoId,
+        spotId: resolved.spotId,
+        userId,
+        body: input.body,
+      })
+      .returning({ id: comments.id });
+
+    // Notify the uploader, unless they are the one commenting.
+    if (photo.userId && photo.userId !== userId) {
+      const [owner] = await tx.select().from(users).where(eq(users.id, photo.userId));
+      const [author] = await tx.select().from(users).where(eq(users.id, userId));
+
+      if (owner?.notify && author) {
+        await tx
+          .insert(notifications)
+          .values({
+            userId: owner.id,
+            photoId,
+            kind: "comment",
+            dedupeKey: "comment:" + inserted.id,
+            body: commentNotificationBody(
+              {
+                firstName: author.firstName,
+                username: author.username,
+                telegramId: author.telegramId,
+              },
+              input.body,
+            ),
+          })
+          .onConflictDoNothing();
+      }
+    }
 
     return { ok: true, spotId: resolved.spotId } as const;
   });

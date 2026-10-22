@@ -65,6 +65,8 @@ export interface NewPhoto {
   imageUrl: string;
   imageWidth: number;
   imageHeight: number;
+  /** Uploader, so they can be notified about activity on the photo. */
+  userId?: number | null;
 }
 
 export async function createPhoto(input: NewPhoto): Promise<number> {
@@ -78,6 +80,7 @@ export async function createPhoto(input: NewPhoto): Promise<number> {
       imageUrl: input.imageUrl,
       imageWidth: input.imageWidth,
       imageHeight: input.imageHeight,
+      userId: input.userId ?? null,
     })
     .returning({ id: photos.id });
 
