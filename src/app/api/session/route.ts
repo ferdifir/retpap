@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { upsertUser } from "@/db/queries";
+import { probePrivateChat } from "@/lib/bot/api";
 import { verifyInitData } from "@/lib/init-data";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken } from "@/lib/session";
 
@@ -55,6 +56,16 @@ export async function POST(request: Request) {
   }
 
   const user = await upsertUser(profile);
+
+  // Ask Telegram directly instead of trusting the historical flag: a chat that
+  // never started does not exist, and a bot the user blocked answers 403.
+  let started = user.startedAt !== null;
+  if (process.env.NODE_ENV === "production" && process.env.TELEGRAM_BOT_TOKEN) {
+    const probe = await probePrivateChat(user.telegramId);
+    if (probe === "ok") started = true;
+    else if (probe === "missing" || probe === "blocked") started = false;
+    // "unknown" keeps the stored flag: a network blip must not lock users out.
+  }
   const token = createSessionToken(user.id);
 
   (await cookies()).set(SESSION_COOKIE, token, {
@@ -67,7 +78,7 @@ export async function POST(request: Request) {
 
   return Response.json({
     // Local dev has no bot conversation to start, so it always passes.
-    started: user.startedAt !== null || process.env.NODE_ENV !== "production",
+    started: started || process.env.NODE_ENV !== "production",
     user: {
       id: user.id,
       firstName: user.firstName,

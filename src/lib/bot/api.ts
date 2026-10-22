@@ -40,6 +40,26 @@ async function call<T>(method: string, payload: Record<string, unknown> = {}): P
   return body.result;
 }
 
+export type ChatProbe = "ok" | "missing" | "blocked" | "unknown";
+
+/**
+ * Live check whether the bot can reach this user. Telegram does not expose a
+ * "blocked" flag, so we probe with getChat: a chat that was never started does
+ * not exist from the bot's side, and a blocked bot is rejected with 403.
+ */
+export async function probePrivateChat(chatId: number): Promise<ChatProbe> {
+  try {
+    await call<unknown>("getChat", { chat_id: chatId });
+    return "ok";
+  } catch (error) {
+    if (error instanceof BotApiError) {
+      if (error.status === 403) return "blocked";
+      if (error.status === 400) return "missing";
+    }
+    return "unknown";
+  }
+}
+
 export function sendMessage(
   chatId: number,
   text: string,
