@@ -13,6 +13,7 @@ import { orderForSharedPhoto, readSharedSlug, telegramShareLink } from "@/lib/sh
 import { getTelegramWebApp, haptic } from "@/lib/telegram";
 import type { InputSource, SpotTarget } from "@/lib/types";
 import { AppHeader } from "./app-header";
+import { EmptyState } from "./empty-state";
 import { StartGate } from "./start-gate";
 import { InfoModal } from "./info-modal";
 import { PapCard } from "./pap-card";
@@ -559,7 +560,9 @@ export function PapRater() {
 
   if (needsStart) return <StartGate />;
 
-  if (loadState === "error" || !photos || photos.length === 0) {
+  if (photos && photos.length === 0) return <EmptyState />;
+
+  if (loadState === "error" || !photos) {
     return (
       <div className="flex h-full items-center justify-center px-6">
         <p className="text-center text-xs font-medium text-slate-400">
