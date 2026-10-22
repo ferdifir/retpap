@@ -47,7 +47,7 @@ const TIPS = [
   {
     icon: UploadIcon,
     title: "Upload PAP",
-    body: "lewat bot: /upload, kirim foto, kirim caption, lalu tekan Terbitkan.",
+    body: "lewat bot: /upload, kirim foto, kirim caption, lalu tekan Upload.",
   },
 ];
 

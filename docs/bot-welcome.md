@@ -60,7 +60,7 @@ Semua teks di bawah sudah memakai nama brand **RetPAP**.
 > buat kasih nilai 1-10. Foto keren bakal naik panggung, yang asal-asalan
 > siap-siap dibahas.
 >
-> Mau fotomu ikut dinilai? /upload, kirim foto, tulis caption, tekan Terbitkan.
+> Mau fotomu ikut dinilai? /upload, kirim foto, tulis caption, tekan Upload.
 > Fotomu langsung nangkring paling atas.
 >
 > Jangan cuma jadi penonton. Mulai nilai sekarang 👇
@@ -75,9 +75,9 @@ Semua teks di bawah sudah memakai nama brand **RetPAP**.
 > 1. Ketik /upload
 > 2. Kirim fotonya (sebagai foto, bukan file)
 > 3. Kirim caption
-> 4. Tekan Terbitkan
+> 4. Tekan Upload
 >
-> Setelah terbit, fotomu masuk feed dan bisa dinilai orang lain.
+> Setelah diupload, fotomu masuk feed dan bisa dinilai orang lain.
 >
 > /batal - batalkan upload
 

@@ -50,7 +50,7 @@ function confirmKeyboard(): InlineKeyboardMarkup {
   return {
     inline_keyboard: [
       [
-        { text: "✅ Terbitkan", callback_data: "publish" },
+        { text: "✅ Upload", callback_data: "publish" },
         { text: "✕ Batal", callback_data: "cancel" },
       ],
     ],
@@ -139,9 +139,9 @@ const START_TEXT = [
   "1. Ketik /upload",
   "2. Kirim fotonya (sebagai foto, bukan file)",
   "3. Kirim caption",
-  "4. Tekan ✅ Terbitkan",
+  "4. Tekan ✅ Upload",
   "",
-  "Setelah terbit, fotomu masuk feed dan bisa dinilai orang lain.",
+  "Setelah diupload, fotomu masuk feed dan bisa dinilai orang lain.",
   "",
   "/batal — batalkan upload",
 ].join("\n");
@@ -168,7 +168,7 @@ function confirmText(caption: string): string {
     "",
     "Caption: <i>" + escapeHtml(caption) + "</i>",
     "",
-    "Terbitkan sekarang? Foto akan muncul di feed dan bisa dinilai semua orang.",
+    "Upload sekarang? Foto akan muncul di feed dan bisa dinilai semua orang.",
   ].join("\n");
 }
 
