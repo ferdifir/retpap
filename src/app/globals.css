@@ -167,10 +167,6 @@
   display: none;
 }
 
-html[data-tg-fullscreen="true"] .brand-inline {
-  display: none;
-}
-
 html[data-tg-fullscreen="true"] .brand-strip {
   position: fixed;
   top: var(--app-safe-top);
