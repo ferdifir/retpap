@@ -341,8 +341,8 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
 
     await clearUploadSession(user.id);
 
-    await editMessageCaption(chatId, messageId, "✅ <b>Terbit!</b>\n\nCaption: <i>" + escapeHtml(session.caption) + "</i>");
-    await sendMessage(chatId, "Fotonya sudah masuk feed dan jadi yang paling atas. Buka app untuk lihat dan menilai foto lain.", {
+    await editMessageCaption(chatId, messageId, "✅ <b>Foto kamu sudah masuk feed.</b>\n\nCaption: <i>" + escapeHtml(session.caption) + "</i>");
+    await sendMessage(chatId, "Buka app buat lihat dan menilai foto lain.", {
       keyboard: openAppKeyboard(slug),
     });
 
