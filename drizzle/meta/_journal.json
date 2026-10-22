@@ -43,6 +43,13 @@
       "when": 1792644537367,
       "tag": "0005_organic_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792649645465,
+      "tag": "0006_easy_wendigo",
+      "breakpoints": true
     }
   ]
 }

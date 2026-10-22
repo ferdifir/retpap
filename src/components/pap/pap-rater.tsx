@@ -14,7 +14,7 @@ import { getTelegramWebApp, haptic } from "@/lib/telegram";
 import type { InputSource, SpotTarget } from "@/lib/types";
 import { AppHeader } from "./app-header";
 import { EmptyState } from "./empty-state";
-import { StartGate } from "./start-gate";
+import { StartGate, type GateKind } from "./start-gate";
 import { InfoModal } from "./info-modal";
 import { PapCard } from "./pap-card";
 import { RatingOverlay } from "./rating-overlay";
@@ -56,8 +56,10 @@ export function PapRater() {
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   // Photos open clean: reactions stay hidden until the toggle is used.
   const [reactionsVisible, setReactionsVisible] = useState(true);
-  const [needsStart, setNeedsStart] = useState(false);
-  const gateRef = useRef(false);
+  const [gate, setGate] = useState<GateKind | null>(null);
+  const [channelUrl, setChannelUrl] = useState("");
+  const [bootKey, setBootKey] = useState(0);
+  const gateRef = useRef<GateKind | null>(null);
 
   const ratingRef = useRef(DEFAULT_RATING);
   const isRatingRef = useRef(false);
@@ -94,20 +96,30 @@ export function PapRater() {
         });
         if (!session.ok) throw new Error("session");
 
-        const sessionBody = (await session.json()) as { user: FeedUser; started: boolean };
+        const sessionBody = (await session.json()) as {
+          user: FeedUser;
+          started: boolean;
+          subscribed: boolean;
+          channelUrl: string;
+        };
 
-        // The bot must be started first; the app stays closed until it is.
-        if (!sessionBody.started) {
-          gateRef.current = true;
-          if (!cancelled) {
-            setNeedsStart(true);
-            setLoadState("ready");
-          }
-          return;
+        // Bot first, then the channel; the app stays closed until both pass.
+        const nextGate: GateKind | null = !sessionBody.started
+          ? "start"
+          : !sessionBody.subscribed
+            ? "channel"
+            : null;
+
+        gateRef.current = nextGate;
+        if (!cancelled) {
+          setGate(nextGate);
+          setChannelUrl(sessionBody.channelUrl);
         }
 
-        gateRef.current = false;
-        if (!cancelled) setNeedsStart(false);
+        if (nextGate) {
+          if (!cancelled) setLoadState("ready");
+          return;
+        }
 
         const response = await fetch("/api/feed");
         if (!response.ok) throw new Error("feed");
@@ -146,7 +158,18 @@ export function PapRater() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [identity]);
+  }, [identity, bootKey]);
+
+  const recheckChannel = useCallback(async () => {
+    const response = await fetch("/api/subscription/check", { method: "POST" });
+    if (!response.ok) return false;
+
+    const body = (await response.json()) as { subscribed: boolean };
+    if (!body.subscribed) return false;
+
+    setBootKey((key) => key + 1);
+    return true;
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -558,7 +581,9 @@ export function PapRater() {
     );
   }
 
-  if (needsStart) return <StartGate />;
+  if (gate) {
+    return <StartGate kind={gate} channelUrl={channelUrl} onRecheck={recheckChannel} />;
+  }
 
   if (photos && photos.length === 0) return <EmptyState />;
 

@@ -1,15 +1,24 @@
-import { markBotStarted, setNotifyByTelegram, toggleNotifyByTelegram, upsertUser } from "@/db/queries";
+import {
+  deactivatePhoto,
+  markBotStarted,
+  markChannelPost,
+  setNotifyByTelegram,
+  toggleNotifyByTelegram,
+  upsertUser,
+} from "@/db/queries";
 import { clearUploadSession, createPhoto, getUploadSession, saveUploadSession } from "@/db/upload";
 import { shareUrlFor } from "@/lib/share";
 import type { TelegramUser } from "@/types/telegram";
 import {
   answerCallbackQuery,
+  deleteMessage,
   downloadFile,
   editMessageCaption,
   getFile,
   sendMessage,
   sendPhoto,
 } from "./api";
+import { CHANNEL_URL, channelConfigured, channelId, isChannelMember, ownerTelegramId } from "./channel";
 import { mediaUrl, savePhoto } from "./media";
 import type { BotMessage, BotUpdate, InlineKeyboardMarkup } from "./types";
 
@@ -46,6 +55,79 @@ function confirmKeyboard(): InlineKeyboardMarkup {
       ],
     ],
   };
+}
+
+const CHANNEL_CTA = "Rate foto ini di sini 👇";
+
+/** Photo caption for the channel: the upload, then one line pointing at the app. */
+function channelCaption(caption: string): string {
+  return escapeHtml(caption) + "\n\n" + CHANNEL_CTA;
+}
+
+/**
+ * Blocks the upload until the user joined the channel. Returns true when the
+ * user may continue; a missing configuration also passes.
+ */
+async function requireChannel(chatId: number, telegramId: number): Promise<boolean> {
+  if (await isChannelMember(telegramId)) return true;
+
+  await sendMessage(chatId, "Untuk upload di RetPAP, join channel dulu ya.", {
+    keyboard: { inline_keyboard: [[{ text: "Join Channel", url: CHANNEL_URL }]] },
+  });
+  return false;
+}
+
+/** Publishes the upload to the channel; a failure must not undo the upload. */
+async function postToChannel(photoId: number, slug: string, fileId: string, caption: string): Promise<void> {
+  if (!channelConfigured()) return;
+
+  try {
+    const message = await sendPhoto(channelId(), fileId, {
+      caption: channelCaption(caption),
+      keyboard: { inline_keyboard: [[{ text: "Beri nilai", url: shareUrlFor(slug) }]] },
+    });
+    await markChannelPost(photoId, message.message_id);
+  } catch (error) {
+    console.error("[bot] channel post failed", error);
+  }
+}
+
+/** Sends the fresh upload to the owner with a manual delete button. */
+async function notifyOwner(photoId: number, fileId: string, caption: string): Promise<void> {
+  const ownerId = ownerTelegramId();
+  if (ownerId === null) return;
+
+  try {
+    await sendPhoto(ownerId, fileId, {
+      caption: escapeHtml(caption),
+      keyboard: { inline_keyboard: [[{ text: "Hapus", callback_data: "del:" + photoId }]] },
+    });
+  } catch (error) {
+    console.error("[bot] owner notification failed", error);
+  }
+}
+
+/** Manual curation: hide the photo, drop the channel post, tell the uploader. */
+async function removePhoto(photoId: number, chatId: number, messageId: number): Promise<void> {
+  const removed = await deactivatePhoto(photoId);
+
+  if (!removed) {
+    await editMessageCaption(chatId, messageId, "Foto ini sudah tidak aktif.");
+    return;
+  }
+
+  if (removed.channelMessageId !== null && channelConfigured()) {
+    await deleteMessage(channelId(), removed.channelMessageId).catch(() => undefined);
+  }
+
+  if (removed.uploaderTelegramId !== null) {
+    await sendMessage(
+      removed.uploaderTelegramId,
+      "Fotomu dihapus dari RetPAP karena tidak sesuai ketentuan. Kamu masih bisa upload foto lain lewat /upload.",
+    ).catch(() => undefined);
+  }
+
+  await editMessageCaption(chatId, messageId, "Foto dihapus dari feed.");
 }
 
 const START_TEXT = [
@@ -117,6 +199,8 @@ async function showConfirmation(chatId: number, fileId: string, caption: string)
 }
 
 async function handlePhoto(message: BotMessage, user: TelegramUser): Promise<void> {
+  if (!(await requireChannel(message.chat.id, user.id))) return;
+
   const sizes = message.photo ?? [];
   // Telegram sends the sizes ascending, so the last entry is the largest.
   const largest = sizes[sizes.length - 1];
@@ -181,6 +265,7 @@ async function handleText(message: BotMessage, user: TelegramUser): Promise<void
   }
 
   if (command === "upload" || command === "tambah") {
+    if (!(await requireChannel(chatId, user.id))) return;
     await startUpload(chatId, user.id);
     return;
   }
@@ -245,7 +330,7 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
       languageCode: user.language_code,
     });
 
-    await createPhoto({
+    const photoId = await createPhoto({
       slug,
       caption: session.caption,
       imageUrl: mediaUrl(slug),
@@ -260,6 +345,10 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
     await sendMessage(chatId, "Fotonya sudah masuk feed dan jadi yang paling atas. Buka app untuk lihat dan menilai foto lain.", {
       keyboard: openAppKeyboard(slug),
     });
+
+    // Broadcast and curation are best-effort: the upload already succeeded.
+    await postToChannel(photoId, slug, session.fileId, session.caption);
+    await notifyOwner(photoId, session.fileId, session.caption);
   } catch (error) {
     console.error("[bot] publish failed", error);
     await editMessageCaption(chatId, messageId, "Gagal menyimpan foto. Kirim ulang dengan /upload.");
@@ -272,6 +361,21 @@ async function handleCallback(update: BotUpdate): Promise<void> {
 
   const chatId = query.message?.chat.id;
   const messageId = query.message?.message_id;
+
+  // Owner-only buttons: anyone who sees the message can press them otherwise.
+  if (query.data?.startsWith("del:")) {
+    const photoId = Number(query.data.slice(4));
+    if (query.from.id !== ownerTelegramId() || !Number.isInteger(photoId)) {
+      await answerCallbackQuery(query.id, "Bukan untuk kamu").catch(() => undefined);
+      return;
+    }
+
+    await answerCallbackQuery(query.id).catch(() => undefined);
+    if (chatId !== undefined && messageId !== undefined) {
+      await removePhoto(photoId, chatId, messageId);
+    }
+    return;
+  }
 
   // Stop the client-side spinner before doing any slow work.
   await answerCallbackQuery(query.id).catch(() => undefined);

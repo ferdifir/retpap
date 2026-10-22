@@ -75,6 +75,8 @@ export const photos = pgTable(
     }),
     /** Last time a reaction/rating digest went out for this photo. */
     lastDigestAt: timestamp("last_digest_at", { withTimezone: true }),
+    /** Channel post for this photo, so a manual delete can remove it too. */
+    channelMessageId: bigint("channel_message_id", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

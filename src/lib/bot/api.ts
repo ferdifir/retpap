@@ -63,8 +63,31 @@ export async function probePrivateChat(chatId: number): Promise<ChatProbe> {
   }
 }
 
+export type ChatMemberStatus =
+  | "creator"
+  | "administrator"
+  | "member"
+  | "restricted"
+  | "left"
+  | "kicked";
+
+export interface ChatMember {
+  status: ChatMemberStatus;
+  /** Only present for "restricted" members. */
+  is_member?: boolean;
+}
+
+/** Membership of one user; channels need the bot to be an administrator. */
+export function getChatMember(chatId: number | string, userId: number): Promise<ChatMember> {
+  return call<ChatMember>("getChatMember", { chat_id: chatId, user_id: userId });
+}
+
+export async function deleteMessage(chatId: number | string, messageId: number): Promise<void> {
+  await call("deleteMessage", { chat_id: chatId, message_id: messageId });
+}
+
 export function sendMessage(
-  chatId: number,
+  chatId: number | string,
   text: string,
   options: { keyboard?: InlineKeyboardMarkup; preview?: boolean } = {},
 ): Promise<BotMessage> {
@@ -78,7 +101,7 @@ export function sendMessage(
 }
 
 export function sendPhoto(
-  chatId: number,
+  chatId: number | string,
   photo: string,
   options: { caption?: string; keyboard?: InlineKeyboardMarkup } = {},
 ): Promise<BotMessage> {

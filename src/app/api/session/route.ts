@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { upsertUser } from "@/db/queries";
 import { probePrivateChat } from "@/lib/bot/api";
+import { CHANNEL_URL, isChannelMember } from "@/lib/bot/channel";
 import { verifyInitData } from "@/lib/init-data";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken } from "@/lib/session";
 
@@ -66,6 +67,8 @@ export async function POST(request: Request) {
     else if (probe === "missing" || probe === "blocked") started = false;
     // "unknown" keeps the stored flag: a network blip must not lock users out.
   }
+  // Same idea for the channel: ask Telegram, never trust a stored flag.
+  const subscribed = await isChannelMember(user.telegramId);
   const token = createSessionToken(user.id);
 
   (await cookies()).set(SESSION_COOKIE, token, {
@@ -79,6 +82,8 @@ export async function POST(request: Request) {
   return Response.json({
     // Local dev has no bot conversation to start, so it always passes.
     started: started || process.env.NODE_ENV !== "production",
+    subscribed: subscribed || process.env.NODE_ENV !== "production",
+    channelUrl: CHANNEL_URL,
     user: {
       id: user.id,
       firstName: user.firstName,

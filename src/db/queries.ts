@@ -658,3 +658,56 @@ export async function getSpotComments(
     author: { firstName: row.firstName, username: row.username },
   }));
 }
+
+/** Remembers the channel post so a manual delete can remove it as well. */
+export async function markChannelPost(photoId: number, messageId: number): Promise<void> {
+  const { db } = getDb();
+  await db.update(photos).set({ channelMessageId: messageId }).where(eq(photos.id, photoId));
+}
+
+export async function getUserTelegramId(userId: number): Promise<number | null> {
+  const { db } = getDb();
+
+  const [row] = await db
+    .select({ telegramId: users.telegramId })
+    .from(users)
+    .where(eq(users.id, userId));
+
+  return row?.telegramId ?? null;
+}
+
+export type RemovedPhoto = {
+  slug: string;
+  channelMessageId: number | null;
+  uploaderTelegramId: number | null;
+};
+
+/**
+ * Hides a photo from the feed (getFeed only reads active rows) and returns what
+ * the bot still has to clean up: the channel post and the uploader notice.
+ */
+export async function deactivatePhoto(photoId: number): Promise<RemovedPhoto | null> {
+  const { db } = getDb();
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        slug: photos.slug,
+        channelMessageId: photos.channelMessageId,
+        uploaderTelegramId: users.telegramId,
+      })
+      .from(photos)
+      .leftJoin(users, eq(users.id, photos.userId))
+      .where(and(eq(photos.id, photoId), eq(photos.isActive, true)));
+
+    if (!row) return null;
+
+    await tx.update(photos).set({ isActive: false }).where(eq(photos.id, photoId));
+
+    return {
+      slug: row.slug,
+      channelMessageId: row.channelMessageId,
+      uploaderTelegramId: row.uploaderTelegramId,
+    };
+  });
+}
