@@ -5,6 +5,11 @@ export const SHARE_PHOTO_PARAM = "photo";
 
 const BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "menfesaibot";
 
+/** Deep link that opens the bot chat with a Start button. */
+export function botStartUrl(): string {
+  return "https://t.me/" + BOT_USERNAME + "?start=app";
+}
+
 /** Deep link that opens the Mini App on one photo. */
 export function shareUrlFor(slug: string): string {
   return "https://t.me/" + BOT_USERNAME + "?startapp=" + encodeURIComponent(slug);

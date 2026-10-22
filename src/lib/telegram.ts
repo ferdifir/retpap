@@ -35,8 +35,7 @@ export function haptic(kind: HapticKind = "light"): void {
  * Opens a Telegram profile inside the app. `openTelegramLink` keeps the Mini
  * App alive (Bot API 7.0+); the browser falls back to a new tab.
  */
-export function openTelegramProfile(username: string): void {
-  const url = "https://t.me/" + username;
+export function openTelegramUrl(url: string): void {
   const webApp = getTelegramWebApp();
 
   if (webApp?.openTelegramLink) {
@@ -45,6 +44,10 @@ export function openTelegramProfile(username: string): void {
   }
 
   if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
+}
+
+export function openTelegramProfile(username: string): void {
+  openTelegramUrl("https://t.me/" + username);
 }
 
 /** Fired once the SDK is loaded and the Mini App has booted. */

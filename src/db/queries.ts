@@ -315,6 +315,38 @@ export async function upsertUser(profile: {
   return row;
 }
 
+/**
+ * Records that the user has started the bot. Called from the webhook, so the
+ * Mini App can refuse to run for people who never pressed Start.
+ */
+export async function markBotStarted(profile: {
+  telegramId: number;
+  firstName: string;
+  username?: string | null;
+  lastName?: string | null;
+  languageCode?: string | null;
+}): Promise<void> {
+  const { db } = getDb();
+
+  await db
+    .insert(users)
+    .values({
+      telegramId: profile.telegramId,
+      firstName: profile.firstName,
+      username: profile.username ?? null,
+      lastName: profile.lastName ?? null,
+      languageCode: profile.languageCode ?? null,
+      startedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: users.telegramId,
+      set: {
+        startedAt: sql`coalesce(${users.startedAt}, now())`,
+        lastSeenAt: new Date(),
+      },
+    });
+}
+
 export async function clearReaction(photoId: number, userId: number): Promise<number | null> {
   const { db } = getDb();
 

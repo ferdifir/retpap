@@ -1,3 +1,4 @@
+import { markBotStarted } from "@/db/queries";
 import { clearUploadSession, createPhoto, getUploadSession, saveUploadSession } from "@/db/upload";
 import { shareUrlFor } from "@/lib/share";
 import type { TelegramUser } from "@/types/telegram";
@@ -52,7 +53,14 @@ const START_TEXT = [
   "",
   "Kasih nilai foto orang lain, atau unggah foto kamu sendiri.",
   "",
-  "/upload — unggah foto",
+  "<b>Cara upload PAP untuk dinilai:</b>",
+  "1. Ketik /upload",
+  "2. Kirim fotonya (sebagai foto, bukan file)",
+  "3. Kirim caption",
+  "4. Tekan ✅ Terbitkan",
+  "",
+  "Setelah terbit, fotomu masuk feed dan bisa dinilai orang lain.",
+  "",
   "/batal — batalkan upload",
 ].join("\n");
 
@@ -275,6 +283,15 @@ export async function handleUpdate(update: BotUpdate): Promise<void> {
     await sendMessage(message.chat.id, "Upload hanya bisa lewat chat pribadi dengan bot.");
     return;
   }
+
+  // Any private message proves the user has started the bot.
+  await markBotStarted({
+    telegramId: user.id,
+    firstName: user.first_name,
+    username: user.username,
+    lastName: user.last_name,
+    languageCode: user.language_code,
+  });
 
   if (message.photo && message.photo.length > 0) {
     await handlePhoto(message, user);

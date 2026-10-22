@@ -14,6 +14,7 @@ import { getTelegramWebApp, haptic } from "@/lib/telegram";
 import type { InputSource, SpotTarget } from "@/lib/types";
 import { AppHeader } from "./app-header";
 import { GestureHint } from "./gesture-hint";
+import { StartGate } from "./start-gate";
 import { InfoModal } from "./info-modal";
 import { PapCard } from "./pap-card";
 import { RatingOverlay } from "./rating-overlay";
@@ -56,6 +57,8 @@ export function PapRater() {
   const [hasInteracted, setHasInteracted] = useState(false);
   // Photos open clean: reactions stay hidden until the toggle is used.
   const [reactionsVisible, setReactionsVisible] = useState(true);
+  const [needsStart, setNeedsStart] = useState(false);
+  const gateRef = useRef(false);
 
   const ratingRef = useRef(DEFAULT_RATING);
   const isRatingRef = useRef(false);
@@ -92,7 +95,20 @@ export function PapRater() {
         });
         if (!session.ok) throw new Error("session");
 
-        const sessionBody = (await session.json()) as { user: FeedUser };
+        const sessionBody = (await session.json()) as { user: FeedUser; started: boolean };
+
+        // The bot must be started first; the app stays closed until it is.
+        if (!sessionBody.started) {
+          gateRef.current = true;
+          if (!cancelled) {
+            setNeedsStart(true);
+            setLoadState("ready");
+          }
+          return;
+        }
+
+        gateRef.current = false;
+        if (!cancelled) setNeedsStart(false);
 
         const response = await fetch("/api/feed");
         if (!response.ok) throw new Error("feed");
@@ -118,8 +134,18 @@ export function PapRater() {
 
     void boot();
 
+    // Coming back from the bot chat: re-check instead of making the user
+    // reopen the Mini App by hand.
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && gateRef.current) void boot();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [identity]);
 
@@ -538,6 +564,8 @@ export function PapRater() {
       </div>
     );
   }
+
+  if (needsStart) return <StartGate />;
 
   if (loadState === "error" || !photos || photos.length === 0) {
     return (

@@ -29,6 +29,13 @@
       "when": 1792604436545,
       "tag": "0003_nice_runaways",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792640493435,
+      "tag": "0004_outstanding_gideon",
+      "breakpoints": true
     }
   ]
 }

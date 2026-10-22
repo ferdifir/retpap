@@ -28,6 +28,8 @@ export const users = pgTable("users", {
   languageCode: text("language_code"),
   isPremium: boolean("is_premium").notNull().default(false),
   photoUrl: text("photo_url"),
+  /** Set the first time the user talks to the bot; gates the Mini App. */
+  startedAt: timestamp("started_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -66,6 +66,8 @@ export async function POST(request: Request) {
   });
 
   return Response.json({
+    // Local dev has no bot conversation to start, so it always passes.
+    started: user.startedAt !== null || process.env.NODE_ENV !== "production",
     user: {
       id: user.id,
       firstName: user.firstName,
