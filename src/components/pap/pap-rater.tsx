@@ -401,6 +401,29 @@ export function PapRater() {
     [],
   );
 
+  const removeComment = useCallback(async (index: number): Promise<boolean> => {
+    const photo = photosRef.current?.[index];
+    if (!photo) return false;
+
+    try {
+      const response = await fetch("/api/photos/" + photo.id + "/comments", {
+        method: "DELETE",
+      });
+      if (!response.ok) return false;
+
+      const payload = (await response.json()) as { spots: FeedSpot[] };
+      setPhotos((previous) =>
+        previous?.map((entry, entryIndex) =>
+          entryIndex === index ? { ...entry, spots: payload.spots } : entry,
+        ) ?? null,
+      );
+      haptic("warning");
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const loadComments = useCallback(async (index: number, spotId: number): Promise<FeedComment[]> => {
     const photo = photosRef.current?.[index];
     if (!photo) return [];
@@ -562,6 +585,7 @@ export function PapRater() {
               onReact={(target, emoji) => reactTo(index, target, emoji)}
               onComment={(target, body) => addComment(index, target, body)}
               onLoadComments={(spotId) => loadComments(index, spotId)}
+              onDeleteComment={() => removeComment(index)}
               onRatingStart={beginRating}
               onRatingKeyDown={handleRatingKeyDown}
               onRatingBlur={commitRating}

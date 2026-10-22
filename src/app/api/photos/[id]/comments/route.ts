@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { addComment, getPhotoSpots, getSpotComments } from "@/db/queries";
+import { addComment, deleteOwnComment, getPhotoSpots, getSpotComments } from "@/db/queries";
 import { getSessionUserId } from "@/lib/auth-server";
 import { MAX_COMMENT_LENGTH, normaliseComment } from "@/lib/comment-rules";
 
@@ -65,4 +65,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     comments: await getSpotComments(photoId, outcome.spotId, userId),
     spots: await getPhotoSpots(photoId, userId),
   });
+}
+
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const userId = await getSessionUserId();
+  if (userId === null) return Response.json({ error: "unauthorized" }, { status: 401 });
+
+  const photoId = await photoIdFrom(context);
+  if (photoId === null) return Response.json({ error: "bad_photo" }, { status: 400 });
+
+  const removed = await deleteOwnComment(photoId, userId);
+  if (!removed) return Response.json({ error: "not_found" }, { status: 404 });
+
+  return Response.json({ spotId: removed.spotId, spots: await getPhotoSpots(photoId, userId) });
 }

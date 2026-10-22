@@ -21,6 +21,7 @@ type SpotPanelProps = {
   onMode: (mode: PanelMode) => void;
   onEmoji: (emoji: string) => void;
   onComment: (body: string) => void;
+  onDeleteComment: () => void;
   onClose: () => void;
 };
 
@@ -89,6 +90,7 @@ export function SpotPanel({
   onMode,
   onEmoji,
   onComment,
+  onDeleteComment,
   onClose,
 }: SpotPanelProps) {
   useEffect(() => {
@@ -161,7 +163,12 @@ export function SpotPanel({
         comments === null ? (
           <p className="py-2 text-[10px] text-slate-500">Memuat…</p>
         ) : (
-          <CommentCarousel comments={comments} busy={busy} onSubmit={onComment} />
+          <CommentCarousel
+            comments={comments}
+            busy={busy}
+            onSubmit={onComment}
+            onDelete={onDeleteComment}
+          />
         )
       ) : null}
 
@@ -228,10 +235,12 @@ function CommentCarousel({
   comments,
   busy,
   onSubmit,
+  onDelete,
 }: {
   comments: FeedComment[];
   busy: boolean;
   onSubmit: (body: string) => void;
+  onDelete: () => void;
 }) {
   const mine = comments.some((comment) => comment.mine);
   // Newest first, always: the deck must not depend on the server's order.
@@ -349,7 +358,7 @@ function CommentCarousel({
                 />
               ) : (
                 <div className="max-h-[220px] overflow-y-auto pr-1">
-                  <CommentLine comment={slide} />
+                  <CommentLine comment={slide} onDelete={onDelete} />
                 </div>
               )}
             </div>
@@ -366,7 +375,7 @@ function CommentCarousel({
   );
 }
 
-function CommentLine({ comment }: { comment: FeedComment }) {
+function CommentLine({ comment, onDelete }: { comment: FeedComment; onDelete?: () => void }) {
   return (
     <div>
       <div className="flex items-center gap-1.5">
@@ -376,6 +385,16 @@ function CommentLine({ comment }: { comment: FeedComment }) {
         <span className="truncate text-[10px] font-bold text-slate-200">
           {comment.mine ? "Kamu" : comment.author.firstName}
         </span>
+        {comment.mine && onDelete ? (
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label="Hapus komentar"
+            className="ml-auto rounded-md px-1 py-0.5 text-[9px] font-bold text-rose-400/90 transition-colors hover:text-rose-300"
+          >
+            Hapus
+          </button>
+        ) : null}
       </div>
       <p className="mt-1 text-[11px] leading-snug break-words text-slate-300">{comment.body}</p>
     </div>

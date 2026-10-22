@@ -40,6 +40,7 @@ type PapCardProps = {
     body: string,
   ) => Promise<{ spotId: number; comments: FeedComment[] } | null>;
   onLoadComments: (spotId: number) => Promise<FeedComment[]>;
+  onDeleteComment: () => Promise<boolean>;
   onRatingStart: (clientY: number, source: InputSource) => void;
   onRatingKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onRatingBlur: () => void;
@@ -69,6 +70,7 @@ export function PapCard({
   onReact,
   onComment,
   onLoadComments,
+  onDeleteComment,
   onRatingStart,
   onRatingKeyDown,
   onRatingBlur,
@@ -188,6 +190,14 @@ export function PapCard({
     },
     [busy, closePanel, interaction, onComment],
   );
+
+  const handleDeleteComment = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    const removed = await onDeleteComment();
+    setBusy(false);
+    if (removed) closePanel();
+  }, [busy, closePanel, onDeleteComment]);
 
   /* ---- gestures on the photo surface ---- */
 
@@ -427,6 +437,7 @@ export function PapCard({
               }}
               onEmoji={(emoji) => void handleEmoji(emoji)}
               onComment={(body) => void handleComment(body)}
+              onDeleteComment={() => void handleDeleteComment()}
               onClose={closePanel}
             />
           ) : null}

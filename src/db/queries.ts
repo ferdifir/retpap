@@ -426,6 +426,28 @@ export async function addComment(
   });
 }
 
+/** Removes the caller's own comment on a photo, then drops an empty spot. */
+export async function deleteOwnComment(
+  photoId: number,
+  userId: number,
+): Promise<{ spotId: number } | null> {
+  const { db } = getDb();
+
+  return db.transaction(async (tx) => {
+    const [mine] = await tx
+      .select()
+      .from(comments)
+      .where(and(eq(comments.photoId, photoId), eq(comments.userId, userId)));
+
+    if (!mine) return null;
+
+    await tx.delete(comments).where(eq(comments.id, mine.id));
+    await deleteSpotIfEmpty(tx, mine.spotId);
+
+    return { spotId: mine.spotId };
+  });
+}
+
 /** Newest first, so the panel can show the latest without a second query. */
 export async function getSpotComments(
   photoId: number,
