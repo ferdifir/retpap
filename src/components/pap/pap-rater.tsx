@@ -54,7 +54,7 @@ export function PapRater() {
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   // Photos open clean: reactions stay hidden until the toggle is used.
-  const [reactionsVisible, setReactionsVisible] = useState(false);
+  const [reactionsVisible, setReactionsVisible] = useState(true);
 
   const ratingRef = useRef(DEFAULT_RATING);
   const isRatingRef = useRef(false);

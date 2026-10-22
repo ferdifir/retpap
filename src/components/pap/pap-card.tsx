@@ -10,6 +10,7 @@ import { findSpotAt } from "@/lib/reaction-rules";
 import { haptic } from "@/lib/telegram";
 import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
 import type { CardPosition, InputSource, SpotTarget } from "@/lib/types";
+import { CaptionText } from "./caption-text";
 import { RatingSlider } from "./rating-slider";
 import { SpotMarker } from "./spot-marker";
 import { SpotPanel, type PanelMode } from "./spot-panel";
@@ -430,7 +431,7 @@ export function PapCard({
         <div className="relative z-10 shrink-0 space-y-2">
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-2 py-1.5">
             <p className="line-clamp-2 text-center text-xs font-medium text-slate-200">
-              {item.caption}
+              <CaptionText text={item.caption} />
             </p>
           </div>
 
