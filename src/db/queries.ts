@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { commentNotificationBody } from "@/lib/bot/format";
+import { isReactionEmoji } from "@/lib/reactions/catalog";
 import { findSpotAt, sortReactionSummary, type ReactionSummary } from "@/lib/reaction-rules";
 import { getDb, type Db } from "./client";
 import { comments, notifications, photos, ratings, reactions, spots, users } from "./schema";
@@ -254,7 +255,7 @@ async function resolveSpot(
 export type ReactInput = { spotId?: number; x?: number; y?: number; emoji: string };
 export type ReactOutcome =
   | { ok: true; spotId: number; removed: boolean }
-  | { ok: false; reason: "spot_not_found" | "invalid_target" };
+  | { ok: false; reason: "spot_not_found" | "invalid_target" | "unknown_emoji" };
 
 export async function reactToPhoto(
   photoId: number,
@@ -268,14 +269,21 @@ export async function reactToPhoto(
     const [photo] = await tx.select().from(photos).where(eq(photos.id, photoId)).for("update");
     if (!photo) return { ok: false, reason: "invalid_target" } as const;
 
-    const resolved = await resolveSpot(tx, photo, input);
-    if (!resolved.ok) return resolved;
-    const spotId = resolved.spotId;
-
     const [mine] = await tx
       .select()
       .from(reactions)
       .where(and(eq(reactions.photoId, photoId), eq(reactions.userId, userId)));
+
+    // Validate before resolveSpot so a bad emoji never creates an empty spot.
+    // Re-sending the stored emoji stays allowed: rows written before the
+    // catalog existed must remain removable.
+    if (!isReactionEmoji(input.emoji) && mine?.emoji !== input.emoji) {
+      return { ok: false, reason: "unknown_emoji" } as const;
+    }
+
+    const resolved = await resolveSpot(tx, photo, input);
+    if (!resolved.ok) return resolved;
+    const spotId = resolved.spotId;
 
     if (mine && mine.spotId === spotId && mine.emoji === input.emoji) {
       await tx.delete(reactions).where(eq(reactions.id, mine.id));

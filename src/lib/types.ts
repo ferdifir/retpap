@@ -10,3 +10,6 @@ export type SpotTarget = {
   yPct: number;
   spotId: number | null;
 };
+
+/** A reaction write either lands on a spot or reports the server's error code. */
+export type ReactionResult = { ok: true; spotId: number } | { ok: false; code: string };

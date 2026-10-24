@@ -1,17 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, TouchEvent } from "react";
 import { ChevronDownIcon, ChevronUpIcon } from "@/components/icons";
 import { useImageBox } from "@/hooks/use-image-box";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { findSpotAt } from "@/lib/reaction-rules";
+import { pushRecentEmoji, readRecentEmojis } from "@/lib/reactions/recent";
 import { haptic } from "@/lib/telegram";
 import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
-import type { CardPosition, InputSource, SpotTarget } from "@/lib/types";
+import type { CardPosition, InputSource, ReactionResult, SpotTarget } from "@/lib/types";
 import { CaptionText } from "./caption-text";
 import { RatingSlider } from "./rating-slider";
+import { ReactionSheet } from "./reaction-sheet";
 import { SpotMarker } from "./spot-marker";
 import { SpotPanel, type PanelMode } from "./spot-panel";
 import { VideoSurface } from "./video-surface";
@@ -35,7 +37,7 @@ type PapCardProps = {
   ratingDragging: boolean;
   canGoPrevious: boolean;
   canGoNext: boolean;
-  onReact: (target: SpotTarget, emoji: string) => Promise<number | null>;
+  onReact: (target: SpotTarget, emoji: string) => Promise<ReactionResult>;
   onComment: (
     target: SpotTarget,
     body: string,
@@ -82,6 +84,11 @@ export function PapCard({
   const [interaction, setInteraction] = useState<Interaction | null>(null);
   const [comments, setComments] = useState<FeedComment[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [reactError, setReactError] = useState<string | null>(null);
+  // The card only mounts after the feed fetch, so reading storage in the
+  // initializer cannot cause a hydration mismatch.
+  const [recent, setRecent] = useState<string[]>(() => readRecentEmojis());
   // Telegram can report a pre-rotation size for videos; the real video size
   // wins once metadata is available so markers stay on the frame.
   const [mediaSize, setMediaSize] = useState({
@@ -164,20 +171,53 @@ export function PapCard({
   const closePanel = useCallback(() => {
     setInteraction(null);
     setComments(null);
+    setSheetOpen(false);
+    setReactError(null);
   }, []);
+
+  // One Escape owner: the sheet closes first, then the panel. Two document
+  // listeners would close both at once.
+  useEffect(() => {
+    if (!isActive) return;
+
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (sheetOpen) {
+        setSheetOpen(false);
+        return;
+      }
+      if (interaction) closePanel();
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [closePanel, interaction, isActive, sheetOpen]);
 
   const handleEmoji = useCallback(
     async (emoji: string) => {
       if (!interaction || busy) return;
       setBusy(true);
-      const spotId = await onReact(
+      setReactError(null);
+      const result = await onReact(
         { spotId: interaction.spotId, xPct: interaction.xPct, yPct: interaction.yPct },
         emoji,
       );
       setBusy(false);
+
+      if (!result.ok) {
+        setReactError(
+          result.code === "unknown_emoji"
+            ? "Emoji ini tidak dikenal. Perbarui aplikasi."
+            : "Gagal menyimpan reaksi.",
+        );
+        haptic("warning");
+        return;
+      }
+
+      setRecent(pushRecentEmoji(emoji));
       // Picking an emoji is the whole interaction: the panel gets out of the
       // way instead of turning into a counter view.
-      if (spotId !== null) closePanel();
+      closePanel();
     },
     [busy, closePanel, interaction, onReact],
   );
@@ -448,16 +488,31 @@ export function PapCard({
               spot={spot}
               comments={comments}
               busy={busy}
+              recent={recent}
+              reactError={reactError}
               onMode={(mode) => {
                 setInteraction((current) => (current ? { ...current, mode } : current));
+                setReactError(null);
                 if (mode === "comments" && interaction.spotId !== null) {
                   void loadComments(interaction.spotId);
                 }
               }}
               onEmoji={(emoji) => void handleEmoji(emoji)}
+              onMore={() => setSheetOpen(true)}
               onComment={(body) => void handleComment(body)}
               onDeleteComment={() => void handleDeleteComment()}
-              onClose={closePanel}
+            />
+          ) : null}
+
+          {isActive && interaction && sheetOpen ? (
+            <ReactionSheet
+              spot={spot}
+              error={reactError}
+              onPick={(emoji) => {
+                setSheetOpen(false);
+                void handleEmoji(emoji);
+              }}
+              onClose={() => setSheetOpen(false)}
             />
           ) : null}
         </div>

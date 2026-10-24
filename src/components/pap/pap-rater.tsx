@@ -13,7 +13,7 @@ import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { DEFAULT_RATING, PIXELS_PER_POINT, clampRating, roundRating } from "@/lib/rating";
 import { orderForSharedPhoto, readSharedSlug, telegramShareLink } from "@/lib/share";
 import { getTelegramWebApp, haptic } from "@/lib/telegram";
-import type { InputSource, SpotTarget } from "@/lib/types";
+import type { InputSource, ReactionResult, SpotTarget } from "@/lib/types";
 import { AppHeader } from "./app-header";
 import { EmptyState } from "./empty-state";
 import { StartGate, type GateKind } from "./start-gate";
@@ -398,9 +398,9 @@ export function PapRater() {
   }, [isRating, moveRating, commitRating, cancelRating]);
 
   const reactTo = useCallback(
-    async (index: number, target: SpotTarget, emoji: string): Promise<number | null> => {
+    async (index: number, target: SpotTarget, emoji: string): Promise<ReactionResult> => {
       const photo = photosRef.current?.[index];
-      if (!photo) return null;
+      if (!photo) return { ok: false, code: "no_photo" };
 
       // Reacting means you want to see reactions; otherwise the tap looks ignored.
       setReactionsVisible(true);
@@ -417,7 +417,13 @@ export function PapRater() {
           }),
         });
 
-        if (!response.ok) return null;
+        if (!response.ok) {
+          const errorBody = (await response.json().catch(() => ({}))) as { error?: unknown };
+          return {
+            ok: false,
+            code: typeof errorBody.error === "string" ? errorBody.error : "request_failed",
+          };
+        }
 
         const body = (await response.json()) as { spots: FeedSpot[]; removed: boolean; spotId: number };
         setPhotos((previous) =>
@@ -426,9 +432,9 @@ export function PapRater() {
           ) ?? null,
         );
         haptic(body.removed ? "warning" : "success");
-        return body.spotId;
+        return { ok: true, spotId: body.spotId };
       } catch {
-        return null;
+        return { ok: false, code: "network" };
       }
     },
     [],

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
-import { EMOJI_OPTIONS } from "@/lib/data";
 import { MAX_COMMENT_LENGTH } from "@/lib/comment-rules";
+import { QUICK_REACTION_EMOJIS } from "@/lib/reactions/catalog";
+import { QUICK_RECENT_LIMIT } from "@/lib/reactions/recent";
 import { cn } from "@/lib/cn";
 import type { FeedComment, FeedSpot } from "@/lib/feed-types";
 import { CaptionText } from "./caption-text";
@@ -19,11 +20,15 @@ type SpotPanelProps = {
   spot: FeedSpot | null;
   comments: FeedComment[] | null;
   busy: boolean;
+  /** Recently picked emoji, most recent first. */
+  recent: string[];
+  /** Last failed reaction, shown under the quick row. */
+  reactError: string | null;
   onMode: (mode: PanelMode) => void;
   onEmoji: (emoji: string) => void;
+  onMore: () => void;
   onComment: (body: string) => void;
   onDeleteComment: () => void;
-  onClose: () => void;
 };
 
 /** Tallest a single comment card may get before its text scrolls instead. */
@@ -88,20 +93,14 @@ export function SpotPanel({
   spot,
   comments,
   busy,
+  recent,
+  reactError,
   onMode,
   onEmoji,
+  onMore,
   onComment,
   onDeleteComment,
-  onClose,
 }: SpotPanelProps) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   const commentCount = spot?.comments ?? 0;
   const accent =
     mode === "emoji"
@@ -158,7 +157,15 @@ export function SpotPanel({
         </div>
       ) : null}
 
-      {mode === "emoji" ? <EmojiBody spot={spot} onEmoji={onEmoji} /> : null}
+      {mode === "emoji" ? (
+        <EmojiBody
+          spot={spot}
+          recent={recent}
+          error={reactError}
+          onEmoji={onEmoji}
+          onMore={onMore}
+        />
+      ) : null}
 
       {mode === "comments" ? (
         comments === null ? (
@@ -185,43 +192,80 @@ export function SpotPanel({
   );
 }
 
+/** Six chips plus the More button fill two rows in the 236px popover. */
+const QUICK_ROW_LIMIT = 6;
+
 function EmojiBody({
   spot,
+  recent,
+  error,
   onEmoji,
+  onMore,
 }: {
   spot: FeedSpot | null;
+  recent: string[];
+  error: string | null;
   onEmoji: (emoji: string) => void;
+  onMore: () => void;
 }) {
   const counts = new Map((spot?.reactions ?? []).map((reaction) => [reaction.emoji, reaction.count]));
   const mine = spot?.myEmoji ?? null;
 
-  // The full palette always stays visible: an emoji with no count yet is still
-  // a valid choice, and hiding used ones made the list shrink as people voted.
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      {EMOJI_OPTIONS.map((emoji) => {
-        const count = counts.get(emoji) ?? 0;
-        const isMine = mine === emoji;
+  // Telegram order: what this user picked last, then what this spot already
+  // uses, then the defaults. Emoji outside the catalog can sit in the used
+  // list, so legacy rows stay visible and pressable.
+  const defaults = new Set(QUICK_REACTION_EMOJIS);
+  const used = (spot?.reactions ?? [])
+    .filter((reaction) => !defaults.has(reaction.emoji))
+    .map((reaction) => reaction.emoji);
+  const quick = [...new Set([...recent.slice(0, QUICK_RECENT_LIMIT), ...used, ...QUICK_REACTION_EMOJIS])].slice(
+    0,
+    QUICK_ROW_LIMIT,
+  );
 
-        return (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => onEmoji(emoji)}
-            aria-pressed={isMine}
-            aria-label={"Reaksi " + emoji + ", " + count}
-            className={cn(
-              "flex items-center gap-1 rounded-full border px-2 py-1 text-[13px] leading-none transition-colors",
-              isMine
-                ? "border-amber-300 bg-amber-400/25"
-                : "border-amber-400/25 bg-amber-400/8 hover:bg-amber-400/15",
-            )}
-          >
-            <span aria-hidden="true">{emoji}</span>
-            {count > 0 ? <span className="text-[9px] font-black text-amber-300">{count}</span> : null}
-          </button>
-        );
-      })}
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-1">
+        {quick.map((emoji) => {
+          const count = counts.get(emoji) ?? 0;
+          const isMine = mine === emoji;
+
+          return (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => onEmoji(emoji)}
+              aria-pressed={isMine}
+              aria-label={"Reaksi " + emoji + ", " + count}
+              className={cn(
+                "flex items-center gap-1 rounded-full border px-2 py-1 text-[13px] leading-none transition-colors",
+                isMine
+                  ? "border-amber-300 bg-amber-400/25"
+                  : "border-amber-400/25 bg-amber-400/8 hover:bg-amber-400/15",
+              )}
+            >
+              <span aria-hidden="true">{emoji}</span>
+              {count > 0 ? <span className="text-[9px] font-black text-amber-300">{count}</span> : null}
+            </button>
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={onMore}
+          data-emoji-more
+          aria-label="Emoji lainnya"
+          className="flex items-center rounded-full border border-dashed border-amber-400/40 px-2 py-1 text-[13px] leading-none text-amber-300 transition-colors hover:bg-amber-400/15"
+        >
+          <span aria-hidden="true">+</span>
+        </button>
+      </div>
+
+      {error ? (
+        <p role="alert" className="mt-1.5 text-[9px] leading-snug text-rose-400">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

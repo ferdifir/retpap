@@ -152,9 +152,39 @@
   animation: panel-in 0.18s ease-out forwards;
 }
 
+/* Reaction sheet: bottom sheet slides, backdrop fades. Only transform and
+   opacity animate, which stays cheap on Android WebViews. */
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.reaction-sheet {
+  animation: sheet-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.reaction-backdrop {
+  animation: fade-in 0.15s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card-face,
   .spot-panel,
+  .reaction-sheet,
+  .reaction-backdrop,
   .tap-ripple {
     animation: none !important;
     transition-duration: 0.01ms !important;

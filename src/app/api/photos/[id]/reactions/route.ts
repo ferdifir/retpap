@@ -7,7 +7,8 @@ const bodySchema = z
     spotId: z.number().int().positive().optional(),
     x: z.number().min(0).max(1).optional(),
     y: z.number().min(0).max(1).optional(),
-    emoji: z.string().min(1).max(8),
+    // Bounds abuse only; the catalog decides what is actually accepted.
+    emoji: z.string().min(1).max(32),
   })
   .refine(
     (value) => value.spotId !== undefined || (value.x !== undefined && value.y !== undefined),
@@ -25,7 +26,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!parsed.success) return Response.json({ error: "invalid_body" }, { status: 400 });
 
   const outcome = await reactToPhoto(photoId, userId, parsed.data);
-  if (!outcome.ok) return Response.json({ error: outcome.reason }, { status: 404 });
+  if (!outcome.ok) {
+    const status = outcome.reason === "unknown_emoji" ? 400 : 404;
+    return Response.json({ error: outcome.reason }, { status });
+  }
 
   return Response.json({
     spotId: outcome.spotId,

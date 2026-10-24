@@ -13,6 +13,10 @@ import { useEffect } from "react";
 export function useTouchGuard(): void {
   useEffect(() => {
     const blockNativePan = (event: TouchEvent) => {
+      // The reaction sheet opts out so its own list can scroll: CSS touch-action
+      // cannot undo a preventDefault issued by a non-passive listener.
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-native-scroll]")) return;
       if (event.cancelable) event.preventDefault();
     };
 
