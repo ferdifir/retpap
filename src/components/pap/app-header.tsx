@@ -1,5 +1,6 @@
 import { EyeIcon, EyeOffIcon, ShareIcon, TrophyIcon } from "@/components/icons";
-import { formatVotes, getRatingTone } from "@/lib/rating";
+import { formatVotes, ratingLevel } from "@/lib/rating";
+import { RatingIcon } from "./rating-icon";
 
 type AppHeaderProps = {
   avgRating: number;
@@ -18,17 +19,14 @@ export function AppHeader({
   onShare,
   onLeaderboardClick,
 }: AppHeaderProps) {
-  // Same tone the slider overlay uses, so the icon always matches the score.
-  const tone = getRatingTone(avgRating);
-
   return (
     <header className="glass-panel z-30 flex shrink-0 items-center justify-between rounded-2xl p-3">
       <div className="flex items-center gap-3">
         <div
           aria-hidden="true"
-          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 text-base shadow-lg shadow-cyan-500/30"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-slate-950/70 shadow-lg shadow-slate-950/40"
         >
-          {tone.emoji}
+          <RatingIcon level={ratingLevel(avgRating)} className="size-7" />
         </div>
         <div>
           <div className="flex items-baseline gap-1.5">

@@ -17,9 +17,29 @@ export function ratingToPercent(value: number): number {
   return ((value - MIN_RATING) / (MAX_RATING - MIN_RATING)) * 100;
 }
 
+/**
+ * Ten-level crystal from docs/rating-icons-spec.md. The bands line up with
+ * whole numbers (1.0-1.4 → 1, 1.5-2.4 → 2, …), so rounding is the mapping.
+ */
+export const RATING_LEVEL_NAMES = [
+  "Frost",
+  "Ice",
+  "Thaw",
+  "Ember",
+  "Spark",
+  "Flame",
+  "Blaze",
+  "Bolt",
+  "Overcharge",
+  "Supernova",
+] as const;
+
+export function ratingLevel(score: number): number {
+  return Math.min(10, Math.max(1, Math.round(score)));
+}
+
 export type RatingTone = {
   fill: string;
-  emoji: string;
   label: string;
 };
 
@@ -27,7 +47,6 @@ export function getRatingTone(score: number): RatingTone {
   if (score < 5) {
     return {
       fill: "bg-gradient-to-t from-red-600 to-orange-500",
-      emoji: "❄️",
       label: "Kurang",
     };
   }
@@ -35,14 +54,12 @@ export function getRatingTone(score: number): RatingTone {
   if (score < 8) {
     return {
       fill: "bg-gradient-to-t from-orange-500 to-amber-400",
-      emoji: "🔥",
       label: "Lumayan",
     };
   }
 
   return {
     fill: "bg-gradient-to-t from-emerald-500 to-green-400",
-    emoji: "⚡️",
     label: "Luar biasa",
   };
 }

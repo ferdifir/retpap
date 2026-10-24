@@ -1,5 +1,6 @@
 import { cn } from "@/lib/cn";
-import { getRatingTone } from "@/lib/rating";
+import { getRatingTone, ratingLevel } from "@/lib/rating";
+import { RatingIcon } from "./rating-icon";
 
 type RatingOverlayProps = {
   rating: number;
@@ -30,7 +31,7 @@ export function RatingOverlay({ rating, visible, settled }: RatingOverlayProps) 
         <span className="text-6xl font-black tracking-tight text-white drop-shadow-md tabular-nums">
           {rating.toFixed(1)}
         </span>
-        <span className="mt-2 text-3xl">{tone.emoji}</span>
+        <RatingIcon level={ratingLevel(rating)} className="mt-2 size-16" />
         <span className="mt-1 text-[11px] font-medium text-slate-300">{tone.label}</span>
       </div>
     </div>
