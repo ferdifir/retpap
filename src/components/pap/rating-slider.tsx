@@ -2,7 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import type { KeyboardEvent } from "react";
-import { ChevronRightIcon, ChevronUpIcon } from "@/components/icons";
+import {
+  ArrowsLeftRightIcon,
+  ArrowsUpDownIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+} from "@/components/icons";
 import { cn } from "@/lib/cn";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { getRatingTone, ratingToPercent } from "@/lib/rating";
@@ -56,11 +63,11 @@ export function RatingSlider({
   }, [axis, disabled, horizontal, onDragStart]);
 
   const percent = ratingToPercent(value);
-  // The rail is inset 12px from each end, so its usable length is (100% - 24px).
-  // The chevron rides at that fraction of the rail; the filled segment runs
-  // from the low end to the chevron, so its length == the chosen rating.
-  const fill = "calc((100% - 24px) * " + (percent / 100) + ")";
-  const marker = "calc(12px + (100% - 24px) * " + (percent / 100) + ")";
+  // End chevrons claim a 28px cap at each end, leaving (100% - 56px) of rail.
+  // The double-arrow marker rides at that fraction; the filled segment runs
+  // from the low end to the marker, so its length == the chosen rating.
+  const fill = "calc((100% - 56px) * " + (percent / 100) + ")";
+  const marker = "calc(28px + (100% - 56px) * " + (percent / 100) + ")";
 
   return (
     <div
@@ -93,11 +100,24 @@ export function RatingSlider({
           : "vertical-slider-track right-2 top-1/2 h-44 w-10 -translate-y-1/2 rounded-full",
       )}
     >
+      {/* End chevrons: static direction hints */}
+      {horizontal ? (
+        <>
+          <ChevronLeftIcon className="pointer-events-none absolute left-1.5 top-1/2 size-2.5 -translate-y-1/2 text-slate-500" />
+          <ChevronRightIcon className="pointer-events-none absolute right-1.5 top-1/2 size-2.5 -translate-y-1/2 animate-pulse text-cyan-400" />
+        </>
+      ) : (
+        <>
+          <ChevronUpIcon className="pointer-events-none absolute left-1/2 top-1.5 size-2.5 -translate-x-1/2 animate-pulse text-cyan-400" />
+          <ChevronDownIcon className="pointer-events-none absolute bottom-1.5 left-1/2 size-2.5 -translate-x-1/2 text-slate-500" />
+        </>
+      )}
+
       {/* Empty rail */}
       <div
         className={cn(
           "pointer-events-none absolute rounded-full bg-slate-700/80",
-          horizontal ? "inset-y-[17px] left-3 right-3" : "inset-x-[17px] top-3 bottom-3",
+          horizontal ? "inset-y-[17px] left-7 right-7" : "inset-x-[17px] top-7 bottom-7",
         )}
       />
 
@@ -106,12 +126,12 @@ export function RatingSlider({
         className={cn(
           "pointer-events-none absolute rounded-full transition-[width,height] duration-75",
           tone.fill,
-          horizontal ? "inset-y-[17px] left-3" : "inset-x-[17px] bottom-3",
+          horizontal ? "inset-y-[17px] left-7" : "inset-x-[17px] bottom-7",
         )}
         style={horizontal ? { width: fill } : { height: fill }}
       />
 
-      {/* Chevron marker: rides at the value position, points toward "increase" */}
+      {/* Double-arrow marker: rides at the value position (the indicator) */}
       <div
         className="pointer-events-none absolute flex animate-pulse items-center justify-center text-cyan-400"
         style={
@@ -121,9 +141,9 @@ export function RatingSlider({
         }
       >
         {horizontal ? (
-          <ChevronRightIcon className="size-3" />
+          <ArrowsLeftRightIcon className="size-3" />
         ) : (
-          <ChevronUpIcon className="size-3" />
+          <ArrowsUpDownIcon className="size-3" />
         )}
       </div>
     </div>

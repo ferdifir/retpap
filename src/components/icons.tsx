@@ -56,10 +56,36 @@ export function ChevronDownIcon(props: IconProps) {
   );
 }
 
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
+      <path d="M15 6l-6 6 6 6" />
+    </svg>
+  );
+}
+
 export function ChevronRightIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
       <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+export function ArrowsLeftRightIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
+      <path d="M4 9h16M4 9l3.5-3.5M4 9l3.5 3.5" />
+      <path d="M20 15H4M20 15l-3.5-3.5M20 15l-3.5 3.5" />
+    </svg>
+  );
+}
+
+export function ArrowsUpDownIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
+      <path d="M9 20V4M9 4L5.5 7.5M9 4l3.5 3.5" />
+      <path d="M15 4v16M15 20l3.5-3.5M15 20l-3.5-3.5" />
     </svg>
   );
 }
