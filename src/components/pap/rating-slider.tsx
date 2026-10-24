@@ -63,11 +63,6 @@ export function RatingSlider({
   }, [axis, disabled, horizontal, onDragStart]);
 
   const percent = ratingToPercent(value);
-  // End chevrons claim a 28px cap at each end, leaving (100% - 56px) of rail.
-  // The double-arrow marker rides at that fraction; the filled segment runs
-  // from the low end to the marker, so its length == the chosen rating.
-  const fill = "calc((100% - 56px) * " + (percent / 100) + ")";
-  const marker = "calc(28px + (100% - 56px) * " + (percent / 100) + ")";
 
   return (
     <div
@@ -96,56 +91,51 @@ export function RatingSlider({
         dragging ? "cursor-grabbing" : "cursor-grab",
         "focus-visible:ring-2 focus-visible:ring-cyan-400/70",
         horizontal
-          ? "horizontal-slider-track bottom-2 left-1/2 h-10 w-[min(80%,300px)] -translate-x-1/2 rounded-full"
-          : "vertical-slider-track right-2 top-1/2 h-44 w-10 -translate-y-1/2 rounded-full",
+          ? "horizontal-slider-track bottom-2 left-1/2 flex h-10 w-[min(80%,300px)] -translate-x-1/2 items-center justify-between gap-1.5 rounded-full px-2.5"
+          : "vertical-slider-track right-2 top-1/2 flex h-44 w-10 -translate-y-1/2 flex-col items-center justify-between rounded-full py-2.5",
       )}
     >
-      {/* End chevrons: static direction hints */}
       {horizontal ? (
         <>
-          <ChevronLeftIcon className="pointer-events-none absolute left-1.5 top-1/2 size-2.5 -translate-y-1/2 text-slate-500" />
-          <ChevronRightIcon className="pointer-events-none absolute right-1.5 top-1/2 size-2.5 -translate-y-1/2 animate-pulse text-cyan-400" />
+          <ChevronLeftIcon className="pointer-events-none size-2.5 text-slate-500" />
+
+          <div className="pointer-events-none relative mx-0.5 h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/80">
+            <div
+              className={cn(
+                "absolute inset-y-0 left-0 rounded-full transition-[width] duration-75",
+                tone.fill,
+              )}
+              style={{ width: percent + "%" }}
+            />
+          </div>
+
+          <div className="pointer-events-none flex size-6 shrink-0 items-center justify-center rounded-full border border-cyan-400/80 bg-slate-900 shadow-lg">
+            <ArrowsLeftRightIcon className="size-2 text-cyan-400" />
+          </div>
+
+          <ChevronRightIcon className="pointer-events-none size-2.5 animate-pulse text-cyan-400" />
         </>
       ) : (
         <>
-          <ChevronUpIcon className="pointer-events-none absolute left-1/2 top-1.5 size-2.5 -translate-x-1/2 animate-pulse text-cyan-400" />
-          <ChevronDownIcon className="pointer-events-none absolute bottom-1.5 left-1/2 size-2.5 -translate-x-1/2 text-slate-500" />
+          <ChevronUpIcon className="pointer-events-none size-2.5 animate-pulse text-cyan-400" />
+
+          <div className="pointer-events-none relative my-1 w-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/80">
+            <div
+              className={cn(
+                "absolute inset-x-0 bottom-0 rounded-full transition-[height] duration-75",
+                tone.fill,
+              )}
+              style={{ height: percent + "%" }}
+            />
+          </div>
+
+          <div className="pointer-events-none my-0.5 flex size-6 items-center justify-center rounded-full border border-cyan-400/80 bg-slate-900 shadow-lg">
+            <ArrowsUpDownIcon className="size-2 text-cyan-400" />
+          </div>
+
+          <ChevronDownIcon className="pointer-events-none size-2.5 text-slate-500" />
         </>
       )}
-
-      {/* Empty rail */}
-      <div
-        className={cn(
-          "pointer-events-none absolute rounded-full bg-slate-700/80",
-          horizontal ? "inset-y-[17px] left-7 right-7" : "inset-x-[17px] top-7 bottom-7",
-        )}
-      />
-
-      {/* Filled segment: length tracks the chosen rating */}
-      <div
-        className={cn(
-          "pointer-events-none absolute rounded-full transition-[width,height] duration-75",
-          tone.fill,
-          horizontal ? "inset-y-[17px] left-7" : "inset-x-[17px] bottom-7",
-        )}
-        style={horizontal ? { width: fill } : { height: fill }}
-      />
-
-      {/* Double-arrow marker: rides at the value position (the indicator) */}
-      <div
-        className="pointer-events-none absolute flex animate-pulse items-center justify-center text-cyan-400"
-        style={
-          horizontal
-            ? { left: marker, top: "50%", transform: "translate(-50%, -50%)" }
-            : { bottom: marker, left: "50%", transform: "translate(-50%, 50%)" }
-        }
-      >
-        {horizontal ? (
-          <ArrowsLeftRightIcon className="size-3" />
-        ) : (
-          <ArrowsUpDownIcon className="size-3" />
-        )}
-      </div>
     </div>
   );
 }
