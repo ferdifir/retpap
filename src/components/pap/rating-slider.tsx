@@ -2,14 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { KeyboardEvent } from "react";
-import {
-  ArrowsLeftRightIcon,
-  ArrowsUpDownIcon,
-  ChevronDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ChevronUpIcon,
-} from "@/components/icons";
+import { ChevronRightIcon, ChevronUpIcon } from "@/components/icons";
 import { cn } from "@/lib/cn";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { getRatingTone, ratingToPercent } from "@/lib/rating";
@@ -63,6 +56,11 @@ export function RatingSlider({
   }, [axis, disabled, horizontal, onDragStart]);
 
   const percent = ratingToPercent(value);
+  // The rail is inset 12px from each end, so its usable length is (100% - 24px).
+  // The chevron rides at that fraction of the rail; the filled segment runs
+  // from the low end to the chevron, so its length == the chosen rating.
+  const fill = "calc((100% - 24px) * " + (percent / 100) + ")";
+  const marker = "calc(12px + (100% - 24px) * " + (percent / 100) + ")";
 
   return (
     <div
@@ -74,7 +72,7 @@ export function RatingSlider({
       aria-valuemin={1}
       aria-valuemax={10}
       aria-valuenow={value}
-      aria-valuetext={`${value.toFixed(1)} out of 10`}
+      aria-valuetext={value.toFixed(1) + " out of 10"}
       aria-disabled={disabled}
       onPointerDown={(event) => {
         if (disabled) return;
@@ -91,51 +89,43 @@ export function RatingSlider({
         dragging ? "cursor-grabbing" : "cursor-grab",
         "focus-visible:ring-2 focus-visible:ring-cyan-400/70",
         horizontal
-          ? "horizontal-slider-track bottom-2 left-1/2 flex h-10 w-[min(80%,300px)] -translate-x-1/2 items-center justify-between gap-1.5 rounded-full px-2.5"
-          : "vertical-slider-track right-2 top-1/2 flex h-44 w-10 -translate-y-1/2 flex-col items-center justify-between rounded-full py-2.5",
+          ? "horizontal-slider-track bottom-2 left-1/2 h-10 w-[min(80%,300px)] -translate-x-1/2 rounded-full"
+          : "vertical-slider-track right-2 top-1/2 h-44 w-10 -translate-y-1/2 rounded-full",
       )}
     >
-      {horizontal ? (
-        <>
-          <ChevronLeftIcon className="pointer-events-none size-2.5 text-slate-500" />
+      {/* Empty rail */}
+      <div
+        className={cn(
+          "pointer-events-none absolute rounded-full bg-slate-700/80",
+          horizontal ? "inset-y-[17px] left-3 right-3" : "inset-x-[17px] top-3 bottom-3",
+        )}
+      />
 
-          <div className="pointer-events-none relative mx-0.5 h-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/80">
-            <div
-              className={cn(
-                "absolute inset-y-0 left-0 rounded-full transition-[width] duration-75",
-                tone.fill,
-              )}
-              style={{ width: percent + "%" }}
-            />
-          </div>
+      {/* Filled segment: length tracks the chosen rating */}
+      <div
+        className={cn(
+          "pointer-events-none absolute rounded-full transition-[width,height] duration-75",
+          tone.fill,
+          horizontal ? "inset-y-[17px] left-3" : "inset-x-[17px] bottom-3",
+        )}
+        style={horizontal ? { width: fill } : { height: fill }}
+      />
 
-          <div className="pointer-events-none flex size-7 shrink-0 items-center justify-center rounded-full border border-cyan-400/80 bg-slate-900 shadow-lg">
-            <ArrowsLeftRightIcon className="size-2.5 text-cyan-400" />
-          </div>
-
-          <ChevronRightIcon className="pointer-events-none size-2.5 animate-pulse text-cyan-400" />
-        </>
-      ) : (
-        <>
-          <ChevronUpIcon className="pointer-events-none size-2.5 animate-pulse text-cyan-400" />
-
-          <div className="pointer-events-none relative my-1 w-1.5 flex-1 overflow-hidden rounded-full bg-slate-700/80">
-            <div
-              className={cn(
-                "absolute inset-x-0 bottom-0 rounded-full transition-[height] duration-75",
-                tone.fill,
-              )}
-              style={{ height: percent + "%" }}
-            />
-          </div>
-
-          <div className="pointer-events-none my-0.5 flex size-7 items-center justify-center rounded-full border border-cyan-400/80 bg-slate-900 shadow-lg">
-            <ArrowsUpDownIcon className="size-2.5 text-cyan-400" />
-          </div>
-
-          <ChevronDownIcon className="pointer-events-none size-2.5 text-slate-500" />
-        </>
-      )}
+      {/* Chevron marker: rides at the value position, points toward "increase" */}
+      <div
+        className="pointer-events-none absolute flex animate-pulse items-center justify-center text-cyan-400"
+        style={
+          horizontal
+            ? { left: marker, top: "50%", transform: "translate(-50%, -50%)" }
+            : { bottom: marker, left: "50%", transform: "translate(-50%, 50%)" }
+        }
+      >
+        {horizontal ? (
+          <ChevronRightIcon className="size-3" />
+        ) : (
+          <ChevronUpIcon className="size-3" />
+        )}
+      </div>
     </div>
   );
 }
