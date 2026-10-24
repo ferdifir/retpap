@@ -128,9 +128,9 @@ export function RatingSlider({
         }
       >
         {horizontal ? (
-          <ArrowsLeftRightIcon className="size-2 text-cyan-400" />
+          <ArrowsLeftRightIcon className="size-4 text-cyan-400" />
         ) : (
-          <ArrowsUpDownIcon className="size-2 text-cyan-400" />
+          <ArrowsUpDownIcon className="size-4 text-cyan-400" />
         )}
       </div>
     </div>
