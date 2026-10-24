@@ -10,7 +10,7 @@ import { findSpotAt } from "@/lib/reaction-rules";
 import { pushRecentEmoji, readRecentEmojis } from "@/lib/reactions/recent";
 import { haptic } from "@/lib/telegram";
 import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
-import type { CardPosition, InputSource, ReactionResult, SpotTarget } from "@/lib/types";
+import type { CardPosition, DragAxis, InputSource, ReactionResult, SpotTarget } from "@/lib/types";
 import { CaptionText } from "./caption-text";
 import { RatingSlider } from "./rating-slider";
 import { ReactionSheet } from "./reaction-sheet";
@@ -44,7 +44,7 @@ type PapCardProps = {
   ) => Promise<{ spotId: number; comments: FeedComment[] } | null>;
   onLoadComments: (spotId: number) => Promise<FeedComment[]>;
   onDeleteComment: () => Promise<boolean>;
-  onRatingStart: (clientY: number, source: InputSource) => void;
+  onRatingStart: (position: number, source: InputSource, axis: DragAxis) => void;
   onRatingKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onRatingBlur: () => void;
   onPrevious: () => void;
@@ -112,6 +112,8 @@ export function PapCard({
   }, []);
 
   const aspect = mediaSize.height / mediaSize.width;
+  // Landscape media leaves the bottom edge free; portrait keeps the right rail.
+  const landscape = mediaSize.width > mediaSize.height * 1.15;
   const spot = interaction?.spotId ? (item.spots.find((entry) => entry.id === interaction.spotId) ?? null) : null;
 
   const toPct = useCallback((clientX: number, clientY: number) => {
@@ -471,8 +473,9 @@ export function PapCard({
               value={rating}
               dragging={ratingDragging}
               disabled={!isActive}
-              onDragStart={(clientY, source) => {
-                onRatingStart(clientY, source);
+              orientation={landscape ? "horizontal" : "vertical"}
+              onDragStart={(position, source, axis) => {
+                onRatingStart(position, source, axis);
               }}
               onKeyDown={onRatingKeyDown}
               onBlur={onRatingBlur}

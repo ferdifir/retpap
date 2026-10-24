@@ -3,6 +3,9 @@ export type CardPosition = "previous" | "active" | "next";
 /** Which event family owns the current gesture. */
 export type InputSource = "pointer" | "touch";
 
+/** Axis a drag follows: vertical on portrait media, horizontal on landscape. */
+export type DragAxis = "x" | "y";
+
 /** A write target: an existing spot, or a new one at the given point. */
 export type SpotTarget = {
   /** 0..1 relative to the rendered image box. */

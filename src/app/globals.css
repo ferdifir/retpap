@@ -75,7 +75,8 @@
     -webkit-backdrop-filter: blur(12px);
   }
 
-  .vertical-slider-track {
+  .vertical-slider-track,
+  .horizontal-slider-track {
     background: rgb(15 23 42 / 0.65);
     border: 1px solid rgb(255 255 255 / 0.2);
     box-shadow: 0 8px 32px 0 rgb(0 0 0 / 0.37);

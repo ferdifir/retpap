@@ -13,7 +13,7 @@ import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { DEFAULT_RATING, PIXELS_PER_POINT, clampRating, roundRating } from "@/lib/rating";
 import { orderForSharedPhoto, readSharedSlug, telegramShareLink } from "@/lib/share";
 import { getTelegramWebApp, haptic } from "@/lib/telegram";
-import type { InputSource, ReactionResult, SpotTarget } from "@/lib/types";
+import type { DragAxis, InputSource, ReactionResult, SpotTarget } from "@/lib/types";
 import { AppHeader } from "./app-header";
 import { EmptyState } from "./empty-state";
 import { StartGate, type GateKind } from "./start-gate";
@@ -64,7 +64,11 @@ export function PapRater() {
   const ratingRef = useRef(DEFAULT_RATING);
   const isRatingRef = useRef(false);
   const ratingSource = useRef<InputSource>("pointer");
-  const dragOrigin = useRef({ y: 0, rating: DEFAULT_RATING });
+  const dragOrigin = useRef<{ position: number; rating: number; axis: DragAxis }>({
+    position: 0,
+    rating: DEFAULT_RATING,
+    axis: "y",
+  });
   const flipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipe = useRef({ startY: 0, active: false, moved: false });
@@ -242,21 +246,22 @@ export function PapRater() {
     [isFlipping],
   );
 
-  const beginRating = useCallback((clientY: number, source: InputSource) => {
+  const beginRating = useCallback((position: number, source: InputSource, axis: DragAxis) => {
     ratingSource.current = source;
     isRatingRef.current = true;
-    dragOrigin.current = { y: clientY, rating: ratingRef.current };
+    dragOrigin.current = { position, rating: ratingRef.current, axis };
     setIsRating(true);
     setJustRated(false);
     haptic("impact");
   }, []);
 
   const moveRating = useCallback(
-    (clientY: number) => {
-      const delta = dragOrigin.current.y - clientY;
-      setRatingValue(
-        roundRating(clampRating(dragOrigin.current.rating + delta / PIXELS_PER_POINT)),
-      );
+    (position: number) => {
+      const origin = dragOrigin.current;
+      // Up and right raise the score; down and left lower it.
+      const delta =
+        origin.axis === "x" ? position - origin.position : origin.position - position;
+      setRatingValue(roundRating(clampRating(origin.rating + delta / PIXELS_PER_POINT)));
     },
     [setRatingValue],
   );
@@ -364,7 +369,8 @@ export function PapRater() {
     if (!isRating) return;
 
     if (ratingSource.current === "pointer") {
-      const handleMove = (event: globalThis.PointerEvent) => moveRating(event.clientY);
+      const handleMove = (event: globalThis.PointerEvent) =>
+        moveRating(dragOrigin.current.axis === "x" ? event.clientX : event.clientY);
       const handleUp = () => commitRating();
       const handleCancel = () => cancelRating();
 
@@ -381,7 +387,7 @@ export function PapRater() {
 
     const handleMove = (event: globalThis.TouchEvent) => {
       const touch = event.touches[0];
-      if (touch) moveRating(touch.clientY);
+      if (touch) moveRating(dragOrigin.current.axis === "x" ? touch.clientX : touch.clientY);
     };
     const handleUp = () => commitRating();
     const handleCancel = () => cancelRating();
