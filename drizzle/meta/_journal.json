@@ -50,6 +50,13 @@
       "when": 1792649645465,
       "tag": "0006_easy_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792681674974,
+      "tag": "0007_plain_adam_warlock",
+      "breakpoints": true
     }
   ]
 }

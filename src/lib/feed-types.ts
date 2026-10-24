@@ -20,21 +20,37 @@ export type FeedComment = {
   author: { firstName: string; username: string | null };
 };
 
+export type FeedMediaType = "photo" | "video";
+
 export type FeedPhoto = {
   id: number;
   /** Stable public identifier, used by share links. */
   slug: string;
   caption: string;
+  mediaType: FeedMediaType;
+  /** jpg for photos, mp4 for videos. */
   imageUrl: string;
+  /** Video still frame; null for photos. */
+  posterUrl: string | null;
+  /** Length in seconds; null for photos. */
+  durationSeconds: number | null;
   imageWidth: number;
   imageHeight: number;
   rating: { avg: number; votes: number; mine: number | null };
   spots: FeedSpot[];
 };
 
-export type FeedUser = {
+/** One ranked row on the all-time leaderboard. */
+export type LeaderboardEntry = {
   id: number;
-  firstName: string;
-  username: string | null;
-  photoUrl: string | null;
+  slug: string;
+  caption: string;
+  mediaType: FeedMediaType;
+  imageUrl: string;
+  posterUrl: string | null;
+  imageWidth: number;
+  imageHeight: number;
+  /** Rounded to one decimal for display. */
+  avg: number;
+  votes: number;
 };

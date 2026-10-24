@@ -93,6 +93,9 @@ export function initTelegram(): void {
 
   const webApp = getTelegramWebApp();
   if (!webApp) return;
+  // The SDK also loads in a normal browser and reports itself as version 6.0
+  // with no init data. Telegram APIs would only log unsupported errors.
+  if (webApp.platform === "unknown" || !webApp.initData) return;
 
   booted = true;
   webApp.ready();
@@ -115,10 +118,22 @@ export function initTelegram(): void {
     applySafeArea(webApp);
   });
   webApp.onEvent?.("fullscreenFailed", () => markFullscreen(false));
-  webApp.requestFullscreen?.();
+
+  // Older clients expose these methods but throw WebAppMethodUnsupported when
+  // called. A browser preview loads the same SDK at version 6.0, so every
+  // optional chrome call must fail quietly instead of aborting the boot.
+  const attempt = (call: () => void) => {
+    try {
+      call();
+    } catch {
+      // Older clients: keep the fallback layout.
+    }
+  };
+
+  attempt(() => webApp.requestFullscreen?.());
   // Telegram Android otherwise swallows vertical drags to minimise the app.
-  webApp.disableVerticalSwipes?.();
-  webApp.setHeaderColor?.("#0b0f19");
-  webApp.setBackgroundColor?.("#0b0f19");
+  attempt(() => webApp.disableVerticalSwipes?.());
+  attempt(() => webApp.setHeaderColor?.("#0b0f19"));
+  attempt(() => webApp.setBackgroundColor?.("#0b0f19"));
   window.dispatchEvent(new Event(TELEGRAM_READY_EVENT));
 }

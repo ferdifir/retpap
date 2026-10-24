@@ -47,15 +47,25 @@ export const uploadSessions = pgTable(
     telegramId: bigint("telegram_id", { mode: "number" }).primaryKey(),
     /** "photo" | "caption" | "confirm" */
     step: text("step").notNull(),
+    /** "photo" | "video"; both share the same caption/confirm steps. */
+    mediaType: text("media_type").notNull().default("photo"),
     fileId: text("file_id"),
+    /** Telegram's thumbnail, used as a poster fallback when ffmpeg is unavailable. */
+    thumbnailFileId: text("thumbnail_file_id"),
     imageWidth: integer("image_width"),
     imageHeight: integer("image_height"),
+    durationSeconds: integer("duration_seconds"),
     caption: text("caption"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     check("upload_sessions_step_valid", sql`${table.step} in ('photo', 'caption', 'confirm')`),
+    check("upload_sessions_media_type_valid", sql`${table.mediaType} in ('photo', 'video')`),
+    check(
+      "upload_sessions_duration_range",
+      sql`${table.durationSeconds} is null or ${table.durationSeconds} between 1 and 30`,
+    ),
   ],
 );
 
@@ -65,9 +75,15 @@ export const photos = pgTable(
     id: identity(),
     slug: text("slug").notNull().unique(),
     caption: text("caption").notNull(),
+    /** "photo" | "video"; imageUrl points at the jpg or mp4 accordingly. */
+    mediaType: text("media_type").notNull().default("photo"),
     imageUrl: text("image_url").notNull(),
     imageWidth: integer("image_width").notNull(),
     imageHeight: integer("image_height").notNull(),
+    /** Video length in seconds; null for photos. */
+    durationSeconds: integer("duration_seconds"),
+    /** Still frame shown before a video plays; null for photos. */
+    posterUrl: text("poster_url"),
     isActive: boolean("is_active").notNull().default(true),
     /** Uploader; null for photos published before ownership existed. */
     userId: bigint("user_id", { mode: "number" }).references(() => users.id, {
@@ -82,6 +98,11 @@ export const photos = pgTable(
   (table) => [
     check("photos_width_positive", sql`${table.imageWidth} > 0`),
     check("photos_height_positive", sql`${table.imageHeight} > 0`),
+    check("photos_media_type_valid", sql`${table.mediaType} in ('photo', 'video')`),
+    check(
+      "photos_duration_range",
+      sql`${table.durationSeconds} is null or ${table.durationSeconds} between 1 and 30`,
+    ),
     index("photos_user_idx").on(table.userId),
   ],
 );

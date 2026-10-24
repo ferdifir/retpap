@@ -56,6 +56,15 @@ export interface TelegramHapticFeedback {
   selectionChanged: () => void;
 }
 
+/** Native header button, used to leave a secondary Mini App screen. */
+export interface TelegramBackButton {
+  isVisible: boolean;
+  show: () => void;
+  hide: () => void;
+  onClick: (callback: () => void) => void;
+  offClick: (callback: () => void) => void;
+}
+
 export interface TelegramWebApp {
   /** Raw query string. Empty when the page runs outside Telegram. */
   initData: string;
@@ -83,6 +92,7 @@ export interface TelegramWebApp {
   disableVerticalSwipes?: () => void;
   enableVerticalSwipes?: () => void;
   HapticFeedback?: TelegramHapticFeedback;
+  BackButton?: TelegramBackButton;
 }
 
 declare global {

@@ -14,6 +14,7 @@ import { CaptionText } from "./caption-text";
 import { RatingSlider } from "./rating-slider";
 import { SpotMarker } from "./spot-marker";
 import { SpotPanel, type PanelMode } from "./spot-panel";
+import { VideoSurface } from "./video-surface";
 
 type RippleState = { key: number; x: number; y: number };
 
@@ -81,6 +82,12 @@ export function PapCard({
   const [interaction, setInteraction] = useState<Interaction | null>(null);
   const [comments, setComments] = useState<FeedComment[] | null>(null);
   const [busy, setBusy] = useState(false);
+  // Telegram can report a pre-rotation size for videos; the real video size
+  // wins once metadata is available so markers stay on the frame.
+  const [mediaSize, setMediaSize] = useState({
+    width: item.imageWidth,
+    height: item.imageHeight,
+  });
 
   const tapStart = useRef<{ x: number; y: number } | null>(null);
   const touchTapStart = useRef<{ x: number; y: number } | null>(null);
@@ -89,9 +96,15 @@ export function PapCard({
   const pressOrigin = useRef<{ x: number; y: number } | null>(null);
   const commentRequest = useRef(0);
   const photoRef = useRef<HTMLDivElement>(null);
-  const box = useImageBox(photoRef, item.imageWidth, item.imageHeight);
+  const box = useImageBox(photoRef, mediaSize.width, mediaSize.height);
 
-  const aspect = item.imageHeight / item.imageWidth;
+  const handleIntrinsicSize = useCallback((width: number, height: number) => {
+    setMediaSize((current) =>
+      current.width === width && current.height === height ? current : { width, height },
+    );
+  }, []);
+
+  const aspect = mediaSize.height / mediaSize.width;
   const spot = interaction?.spotId ? (item.spots.find((entry) => entry.id === interaction.spotId) ?? null) : null;
 
   const toPct = useCallback((clientX: number, clientY: number) => {
@@ -340,14 +353,25 @@ export function PapCard({
           ref={photoRef}
           className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/80 shadow-inner"
         >
-          <Image
-            src={item.imageUrl}
-            alt={item.caption}
-            fill
-            sizes="(max-width: 640px) 100vw, 448px"
-            preload={priority}
-            className="pointer-events-none select-none object-contain"
-          />
+          {item.mediaType === "video" ? (
+            <VideoSurface
+              src={item.imageUrl}
+              poster={item.posterUrl}
+              durationSeconds={item.durationSeconds}
+              active={isActive}
+              suspended={interaction !== null || ratingDragging}
+              onIntrinsicSize={handleIntrinsicSize}
+            />
+          ) : (
+            <Image
+              src={item.imageUrl}
+              alt={item.caption}
+              fill
+              sizes="(max-width: 640px) 100vw, 448px"
+              preload={priority}
+              className="pointer-events-none select-none object-contain"
+            />
+          )}
 
           <div
             role="button"

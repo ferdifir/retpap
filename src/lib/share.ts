@@ -32,17 +32,21 @@ export function telegramShareLink(slug: string, caption: string): string {
 }
 
 /**
- * Slug the app was opened with: `startapp` inside Telegram, `?photo=` in a
- * browser. Only used to pick the first card, never to filter the feed.
+ * Slug to pin first: an explicit `?photo=` navigation wins, otherwise the
+ * Telegram `startapp` parameter. Only used to pick the first card, never to
+ * filter the feed.
  */
 export function readSharedSlug(): string | null {
   if (typeof window === "undefined") return null;
 
-  const startParam = getTelegramWebApp()?.initDataUnsafe?.start_param?.trim();
-  if (startParam) return startParam;
-
+  // An explicit ?photo= is an in-app navigation (for example from the
+  // leaderboard), so it must win over a start_param left over from the
+  // original Telegram launch.
   const fromQuery = new URLSearchParams(window.location.search).get(SHARE_PHOTO_PARAM)?.trim();
-  return fromQuery ? fromQuery : null;
+  if (fromQuery) return fromQuery;
+
+  const startParam = getTelegramWebApp()?.initDataUnsafe?.start_param?.trim();
+  return startParam ? startParam : null;
 }
 
 /**

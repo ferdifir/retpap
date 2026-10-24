@@ -18,12 +18,15 @@ export function StarIcon(props: IconProps) {
   );
 }
 
-export function InfoIcon(props: IconProps) {
+export function TrophyIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 11v5" />
-      <path d="M12 8h.01" />
+      <path d="M8 4h8v5a4 4 0 0 1-8 0V4z" />
+      <path d="M8 5H5v2a3 3 0 0 0 3 3" />
+      <path d="M16 5h3v2a3 3 0 0 1-3 3" />
+      <path d="M12 13v5" />
+      <path d="M10 18h4" />
+      <path d="M9 21h6" />
     </svg>
   );
 }
@@ -138,6 +141,34 @@ export function CommentIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
       <path d="M20 15a3 3 0 0 1-3 3H8l-4 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z" />
+    </svg>
+  );
+}
+
+export function VolumeOnIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
+      <path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z" />
+      <path d="M15.5 9a4 4 0 0 1 0 6" />
+      <path d="M18 6.5a7.5 7.5 0 0 1 0 11" />
+    </svg>
+  );
+}
+
+export function VolumeOffIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
+      <path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z" />
+      <path d="M16 9.5l5 5" />
+      <path d="M21 9.5l-5 5" />
+    </svg>
+  );
+}
+
+export function PlayIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M8 5.5v13l11-6.5z" />
     </svg>
   );
 }

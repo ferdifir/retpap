@@ -92,9 +92,10 @@ await call("setWebhook", {
 
 await call("setMyCommands", {
   commands: [
-    { command: "upload", description: "Unggah foto untuk dinilai" },
-    { command: "batal", description: "Batalkan upload yang sedang berjalan" },
     { command: "start", description: "Buka RetPAP" },
+    { command: "upload", description: "Unggah foto atau video (maks 30 detik)" },
+    { command: "howto", description: "Cara pakai RetPAP" },
+    { command: "batal", description: "Batalkan upload yang sedang berjalan" },
     { command: "notif", description: "Nyalakan atau matikan notifikasi" },
   ],
 });

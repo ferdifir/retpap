@@ -4,7 +4,7 @@ import { findSpotAt, sortReactionSummary, type ReactionSummary } from "@/lib/rea
 import { getDb, type Db } from "./client";
 import { comments, notifications, photos, ratings, reactions, spots, users } from "./schema";
 
-import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
+import type { FeedComment, FeedPhoto, FeedSpot, LeaderboardEntry } from "@/lib/feed-types";
 
 export type { FeedPhoto, FeedSpot };
 
@@ -102,7 +102,10 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
       id: photo.id,
       slug: photo.slug,
       caption: photo.caption,
+      mediaType: photo.mediaType === "video" ? "video" : "photo",
       imageUrl: photo.imageUrl,
+      posterUrl: photo.posterUrl,
+      durationSeconds: photo.durationSeconds,
       imageWidth: photo.imageWidth,
       imageHeight: photo.imageHeight,
       rating: {
@@ -113,6 +116,46 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
       spots,
     };
   });
+}
+
+/**
+ * All-time top PAP by average rating. Only media with at least three voters
+ * qualifies; ties fall back to the larger voter count, then the newer upload.
+ */
+export async function getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
+  const { db } = getDb();
+
+  const rows = await db
+    .select({
+      id: photos.id,
+      slug: photos.slug,
+      caption: photos.caption,
+      mediaType: photos.mediaType,
+      imageUrl: photos.imageUrl,
+      posterUrl: photos.posterUrl,
+      imageWidth: photos.imageWidth,
+      imageHeight: photos.imageHeight,
+      avg: sql<string>`round(avg(${ratings.score})::numeric, 1)::text`,
+      votes: sql<number>`count(${ratings.userId})::int`,
+    })
+    .from(photos)
+    .innerJoin(ratings, eq(ratings.photoId, photos.id))
+    .where(eq(photos.isActive, true))
+    .groupBy(photos.id)
+    .having(sql`count(${ratings.userId}) >= 3`)
+    .orderBy(
+      sql`avg(${ratings.score}) desc`,
+      sql`count(${ratings.userId}) desc`,
+      desc(photos.createdAt),
+      desc(photos.id),
+    )
+    .limit(limit);
+
+  return rows.map((row) => ({
+    ...row,
+    mediaType: row.mediaType === "video" ? "video" : "photo",
+    avg: Number(row.avg),
+  }));
 }
 
 export async function getSpotSummary(spotId: number, userId: number): Promise<FeedSpot | null> {

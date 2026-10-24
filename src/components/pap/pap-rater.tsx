@@ -1,12 +1,14 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, TouchEvent } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
 import { useTelegramUser } from "@/hooks/use-telegram-user";
 import { useTouchGuard } from "@/hooks/use-touch-guard";
-import type { FeedComment, FeedPhoto, FeedSpot, FeedUser } from "@/lib/feed-types";
+import { readDeckPosition, rememberDeckPosition, restoreDeckIndex } from "@/lib/deck-position";
+import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { DEFAULT_RATING, PIXELS_PER_POINT, clampRating, roundRating } from "@/lib/rating";
 import { orderForSharedPhoto, readSharedSlug, telegramShareLink } from "@/lib/share";
@@ -15,7 +17,6 @@ import type { InputSource, SpotTarget } from "@/lib/types";
 import { AppHeader } from "./app-header";
 import { EmptyState } from "./empty-state";
 import { StartGate, type GateKind } from "./start-gate";
-import { InfoModal } from "./info-modal";
 import { PapCard } from "./pap-card";
 import { RatingOverlay } from "./rating-overlay";
 
@@ -45,15 +46,14 @@ function optimisticRating(
 }
 
 export function PapRater() {
+  const router = useRouter();
   const [photos, setPhotos] = useState<FeedPhoto[] | null>(null);
-  const [user, setUser] = useState<FeedUser | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipping, setIsFlipping] = useState(false);
   const [rating, setRating] = useState(DEFAULT_RATING);
   const [isRating, setIsRating] = useState(false);
   const [justRated, setJustRated] = useState(false);
-  const [isInfoOpen, setIsInfoOpen] = useState(false);
   // Photos open clean: reactions stay hidden until the toggle is used.
   const [reactionsVisible, setReactionsVisible] = useState(true);
   const [gate, setGate] = useState<GateKind | null>(null);
@@ -69,6 +69,7 @@ export function PapRater() {
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipe = useRef({ startY: 0, active: false, moved: false });
   const photosRef = useRef<FeedPhoto[] | null>(null);
+  const sharedSlugRef = useRef<string | null>(null);
 
   useEffect(() => {
     photosRef.current = photos;
@@ -97,7 +98,6 @@ export function PapRater() {
         if (!session.ok) throw new Error("session");
 
         const sessionBody = (await session.json()) as {
-          user: FeedUser;
           started: boolean;
           subscribed: boolean;
           channelUrl: string;
@@ -129,15 +129,38 @@ export function PapRater() {
 
         // A share link pins its photo first; the rest keeps the normal order
         // and the pinned photo is dropped from its original position.
-        const deck = orderForSharedPhoto(body.photos, readSharedSlug());
+        const sharedSlug = readSharedSlug();
+        const saved = readDeckPosition();
+        // A different share link wins over the previous session; otherwise a
+        // reload resumes the deck it was already showing.
+        const restored =
+          saved && (sharedSlug === null || saved.sharedSlug === sharedSlug) ? saved : null;
+        // Reuse the old pin on a reload, even if the client drops start_param,
+        // so the deck keeps the same order around the restored card.
+        const pinSlug = sharedSlug ?? restored?.sharedSlug ?? null;
+        const deck = orderForSharedPhoto(body.photos, pinSlug);
+        sharedSlugRef.current = pinSlug;
 
-        setUser(sessionBody.user);
+        // Slugs survive new uploads at the top; the stored index is only a
+        // fallback for when the current media was deleted while away.
+        const initialIndex = restored ? restoreDeckIndex(deck, restored) : 0;
+
         setPhotos(deck);
+        setCurrentIndex(initialIndex);
         setLoadState("ready");
 
-        const initial = deck[0]?.rating.mine ?? DEFAULT_RATING;
+        const initial = deck[initialIndex]?.rating.mine ?? DEFAULT_RATING;
         ratingRef.current = initial;
         setRating(initial);
+
+        const initialPhoto = deck[initialIndex];
+        if (initialPhoto) {
+          rememberDeckPosition({
+            slug: initialPhoto.slug,
+            index: initialIndex,
+            sharedSlug: pinSlug,
+          });
+        }
       } catch {
         if (!cancelled) setLoadState("error");
       }
@@ -196,13 +219,22 @@ export function PapRater() {
       setIsFlipping(true);
       setCurrentIndex(nextIndex);
 
-      const next = list[nextIndex]?.rating.mine ?? DEFAULT_RATING;
+      const nextPhoto = list[nextIndex];
+      const next = nextPhoto?.rating.mine ?? DEFAULT_RATING;
       ratingRef.current = next;
       setRating(next);
       isRatingRef.current = false;
       setIsRating(false);
       setJustRated(false);
       haptic("impact");
+
+      if (nextPhoto) {
+        rememberDeckPosition({
+          slug: nextPhoto.slug,
+          index: nextIndex,
+          sharedSlug: sharedSlugRef.current,
+        });
+      }
 
       if (flipTimer.current) clearTimeout(flipTimer.current);
       flipTimer.current = setTimeout(() => setIsFlipping(false), FLIP_DURATION_MS);
@@ -610,7 +642,7 @@ export function PapRater() {
           setReactionsVisible((visible) => !visible);
         }}
         onShare={shareCurrentPhoto}
-        onInfoClick={() => setIsInfoOpen(true)}
+        onLeaderboardClick={() => router.push("/leaderboard")}
       />
 
       <section
@@ -654,8 +686,6 @@ export function PapRater() {
 
         <RatingOverlay rating={rating} visible={isRating || justRated} settled={justRated} />
       </section>
-
-      <InfoModal open={isInfoOpen} user={user} onClose={() => setIsInfoOpen(false)} />
     </div>
   );
 }

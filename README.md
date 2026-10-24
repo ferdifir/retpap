@@ -1,7 +1,7 @@
 # Rate PAP — Telegram Mini App
 
 Next.js 16 (App Router) + React 19 + TypeScript + Tailwind v4 + Postgres.
-Foto di-rate lewat slider vertikal, reaksi emoji ditempel di titik tertentu pada foto.
+Foto dan video di-rate lewat slider vertikal, reaksi emoji ditempel di titik tertentu pada media.
 
 ## Menjalankan
 
@@ -17,21 +17,27 @@ Tanpa `TELEGRAM_BOT_TOKEN`, aplikasi tetap jalan di `npm run dev` dengan user de
 
 ## Upload lewat bot
 
-Tidak ada form upload di dalam Mini App; foto masuk lewat chat bot.
+Tidak ada form upload di dalam Mini App; foto dan video masuk lewat chat bot.
 
 ```
-/upload   → bot minta foto
-foto      → bot minta caption
+/start    → ringkasan singkat
+/howto    → cara pakai aplikasi
+/upload   → bot minta foto atau video
+media     → bot minta caption
 caption   → preview + tombol Terbitkan / Batal
 ```
 
-`/batal` kapan saja untuk reset. Foto yang dikirim beserta caption dalam satu pesan melewati
-langkah caption.
+`/batal` kapan saja untuk reset. Media yang dikirim beserta caption dalam satu pesan melewati
+langkah caption. Video dibatasi 30 detik dan 20 MB (batas unduh Bot API); format yang diterima
+MP4/WebM.
 
 Sesi disimpan di tabel `upload_sessions` (satu per Telegram user), jadi restart pm2 di tengah
-percakapan tidak menghilangkan foto. File baru diunduh dari Telegram saat tombol Terbitkan
+percakapan tidak menghilangkan media. File baru diunduh dari Telegram saat tombol Terbitkan
 ditekan, disimpan ke `UPLOAD_DIR` (produksi: `/var/lib/retpap/uploads`, sengaja di luar direktori
 app supaya `rsync --delete` tidak menghapusnya), lalu disajikan lewat `GET /media/<slug>`.
+Video memakai `ffmpeg` untuk mengambil poster dan mendukung HTTP Range agar bisa di-seek. Untuk
+channel, video dibuatkan teaser 3 detik yang diblur dan tanpa audio, sehingga gerakannya
+membedakannya dari foto yang cover-nya juga diblur.
 
 Webhook: `POST /api/telegram/webhook`, diautentikasi lewat header
 `X-Telegram-Bot-Api-Secret-Token` yang harus sama dengan `TELEGRAM_WEBHOOK_SECRET`. Daftarkan
@@ -46,6 +52,22 @@ npm run bot:setup -- --delete  # hapus webhook
 
 Kalau `bot:setup` baru membuat secret, jalankan `pm2 restart retpap --update-env` supaya app
 memakai nilai itu.
+
+## Leaderboard
+
+Halaman `/leaderboard` dibuka dari ikon trofi di header feed. Isinya peringkat sepanjang waktu,
+bukan feed harian:
+
+- **Metrik**: rata-rata rating 1–10. Bukan jumlah vote, bukan total reaksi.
+- **Minimum**: hanya media dengan **≥3 penilai** yang masuk. Sisanya menunggu vote tambahan.
+- **Tie-break**: rata-rata sama → penilai lebih banyak → upload lebih baru (`created_at`, lalu `id`).
+- **Media**: foto dan video digabung; video memakai poster + badge play di thumbnail.
+- **Identitas**: tanpa nama uploader, hanya caption, rating, dan jumlah penilai.
+
+`GET /api/leaderboard` mengembalikan 10 besar (`getLeaderboard(10)` di `src/db/queries.ts`).
+Halaman ini mem-bootstrap sesi sendiri lewat `POST /api/session`, jadi deep link dan reload
+tetap bekerja tanpa cookie; kalau gerbang bot/channel belum lolos, user dikembalikan ke feed.
+Data kosong berarti belum ada media dengan 3 penilai, bukan error.
 
 ## Deploy
 
@@ -88,6 +110,7 @@ src/
 │       ├── session/route.ts            # validasi initData → cookie sesi
 │       ├── telegram/webhook/route.ts   # update bot: /upload, foto, caption
 │       ├── feed/route.ts               # foto + spot + rating
+│       ├── leaderboard/route.ts        # 10 besar rata-rata rating
 │       ├── media/[slug]/route.ts       # sajikan foto hasil upload
 │       └── photos/[id]/
 │           ├── reactions/route.ts      # POST toggle/pindah, DELETE
@@ -96,6 +119,7 @@ src/
 ├── components/pap/
 │   ├── pap-rater.tsx      # fetch feed, state, gesture
 │   ├── pap-card.tsx       # kartu, tap/hold surface, posisi marker
+│   ├── leaderboard.tsx    # podium 1–3, list 4–10
 │   ├── spot-marker.tsx    # marker gabungan: emoji + badge reaksi/komentar
 │   ├── spot-panel.tsx     # chip pilihan, palette emoji, thread komentar
 │   └── ...

@@ -10,6 +10,18 @@ export interface BotPhotoSize {
   file_size?: number;
 }
 
+export interface BotVideo {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  /** Length in seconds, as reported by Telegram. */
+  duration: number;
+  mime_type?: string;
+  file_size?: number;
+  thumbnail?: BotPhotoSize;
+}
+
 export interface BotChat {
   id: number;
   type: "private" | "group" | "supergroup" | "channel";
@@ -23,6 +35,7 @@ export interface BotMessage {
   text?: string;
   caption?: string;
   photo?: BotPhotoSize[];
+  video?: BotVideo;
 }
 
 export interface BotCallbackQuery {

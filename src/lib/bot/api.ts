@@ -19,11 +19,11 @@ export function botToken(): string {
   return token;
 }
 
-async function call<T>(method: string, payload: Record<string, unknown> = {}): Promise<T> {
+/** Shared response handling for both JSON and multipart requests. */
+async function request<T>(method: string, init: { headers?: HeadersInit; body: BodyInit }): Promise<T> {
   const response = await fetch(API_BASE + "/bot" + botToken() + "/" + method, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
+    ...init,
     cache: "no-store",
   });
 
@@ -38,6 +38,13 @@ async function call<T>(method: string, payload: Record<string, unknown> = {}): P
   }
 
   return body.result;
+}
+
+async function call<T>(method: string, payload: Record<string, unknown> = {}): Promise<T> {
+  return request<T>(method, {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export type ChatProbe = "ok" | "missing" | "blocked" | "unknown";
@@ -112,6 +119,84 @@ export function sendPhoto(
     ...(options.caption ? { caption: options.caption } : {}),
     ...(options.keyboard ? { reply_markup: options.keyboard } : {}),
   });
+}
+
+/**
+ * Like sendPhoto, but uploads the bytes instead of reusing a file_id. Needed
+ * for the blurred channel teaser, which only exists on our side.
+ */
+export function sendPhotoFile(
+  chatId: number | string,
+  bytes: Buffer,
+  options: { caption?: string; keyboard?: InlineKeyboardMarkup } = {},
+): Promise<BotMessage> {
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("photo", new Blob([new Uint8Array(bytes)], { type: "image/jpeg" }), "photo.jpg");
+  form.append("parse_mode", "HTML");
+  if (options.caption) form.append("caption", options.caption);
+  if (options.keyboard) form.append("reply_markup", JSON.stringify(options.keyboard));
+
+  // No explicit content-type header: fetch adds the multipart boundary itself.
+  return request<BotMessage>("sendPhoto", { body: form });
+}
+
+/**
+ * Uploads video bytes instead of reusing a file_id. Used for the blurred
+ * channel teaser, which only exists on our side. Its first frame is already
+ * blurred, so no separate thumbnail is needed.
+ */
+export function sendVideoFile(
+  chatId: number | string,
+  bytes: Buffer,
+  options: { caption?: string; keyboard?: InlineKeyboardMarkup } = {},
+): Promise<BotMessage> {
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("video", new Blob([new Uint8Array(bytes)], { type: "video/mp4" }), "teaser.mp4");
+  form.append("parse_mode", "HTML");
+  if (options.caption) form.append("caption", options.caption);
+  if (options.keyboard) form.append("reply_markup", JSON.stringify(options.keyboard));
+
+  return request<BotMessage>("sendVideo", { body: form });
+}
+
+/**
+ * Sends a video by file_id. When `thumbnail` is given it is uploaded as the
+ * video cover, which is how the channel shows a blurred teaser frame.
+ */
+export function sendVideo(
+  chatId: number | string,
+  video: string,
+  options: {
+    caption?: string;
+    keyboard?: InlineKeyboardMarkup;
+    thumbnail?: Buffer;
+    /** Hides the cover behind Telegram's spoiler overlay. */
+    spoiler?: boolean;
+  } = {},
+): Promise<BotMessage> {
+  if (!options.thumbnail) {
+    return call<BotMessage>("sendVideo", {
+      chat_id: chatId,
+      video,
+      parse_mode: "HTML",
+      ...(options.caption ? { caption: options.caption } : {}),
+      ...(options.keyboard ? { reply_markup: options.keyboard } : {}),
+      ...(options.spoiler ? { has_spoiler: true } : {}),
+    });
+  }
+
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("video", video);
+  form.append("parse_mode", "HTML");
+  if (options.caption) form.append("caption", options.caption);
+  if (options.keyboard) form.append("reply_markup", JSON.stringify(options.keyboard));
+  if (options.spoiler) form.append("has_spoiler", "true");
+  form.append("thumbnail", new Blob([new Uint8Array(options.thumbnail)], { type: "image/jpeg" }), "thumb.jpg");
+
+  return request<BotMessage>("sendVideo", { body: form });
 }
 
 export async function editMessageText(
