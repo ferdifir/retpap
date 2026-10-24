@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin:0; background:#1e293b; display:flex; gap:60px; padding:40px; align-items:flex-start; }
+  .col { display:flex; flex-direction:column; gap:24px; align-items:center; }
+  .label { color:#94a3b8; font:12px sans-serif; }
+
+  /* 1. TRACK */
+  .track { position:relative; background:rgba(15,23,42,.65); border:1px solid rgba(255,255,255,.2);
+           box-shadow:0 8px 32px rgba(0,0,0,.37); backdrop-filter:blur(12px); }
+  .track.v { width:40px; height:200px; border-radius:9999px; }
+  .track.h { width:300px; height:40px; border-radius:9999px; }
+
+  /* 2. END CHEVRONS */
+  .chev { position:absolute; width:10px; height:10px; color:#64748b; pointer-events:none; }
+  .chev.up    { top:6px;  left:50%; transform:translateX(-50%); color:#22d3ee; }
+  .chev.down  { bottom:6px; left:50%; transform:translateX(-50%); }
+  .chev.left  { left:6px;  top:50%; transform:translateY(-50%); }
+  .chev.right { right:6px; top:50%; transform:translateY(-50%); color:#22d3ee; }
+
+  /* inner rail area (between the chevrons) */
+  .rail { position:absolute; background:#334155; border-radius:9999px; overflow:hidden; }
+  .track.v .rail { left:17px; right:17px; top:24px; bottom:24px; width:6px; }
+  .track.h .rail { top:17px; bottom:17px; left:24px; right:24px; height:6px; }
+
+  /* 3. FILLED SEGMENT (length = value) */
+  .fill { position:absolute; background:linear-gradient(to top,#f97316,#fbbf24); border-radius:9999px; transition:.1s; }
+  .track.v .fill { left:0; right:0; bottom:0; height:calc(100% * var(--p)); }
+  .track.h .fill { top:0; bottom:0; left:0; width:calc(100% * var(--p)); }
+
+  /* 4. BADGE (moves to the end of the fill) */
+  .badge { position:absolute; width:24px; height:24px; border-radius:9999px;
+           border:1px solid rgba(34,211,238,.8); background:#0f172a; box-shadow:0 4px 12px rgba(0,0,0,.4);
+           display:flex; align-items:center; justify-content:center; color:#22d3ee; }
+  .track.v .badge { left:50%; transform:translate(-50%,50%);
+                    bottom:calc(24px + (100% - 48px) * var(--p)); }
+  .track.h .badge { top:50%; transform:translate(-50%,-50%);
+                    left:calc(24px + (100% - 48px) * var(--p)); }
+  .badge svg { width:10px; height:10px; }
+</style>
+</head>
+<body>
+
+  <div class="col">
+    <div class="label">VERTICAL - p=0.75</div>
+    <div class="track v" style="--p:0.75">
+      <svg class="chev up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>
+      <svg class="chev down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      <div class="rail"><div class="fill"></div></div>
+      <div class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20V4M9 4L5.5 7.5M9 4l3.5 3.5"/><path d="M15 4v16M15 20l3.5-3.5M15 20l-3.5-3.5"/></svg></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="label">HORIZONTAL - p=0.75</div>
+    <div class="track h" style="--p:0.75">
+      <svg class="chev left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+      <svg class="chev right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      <div class="rail"><div class="fill"></div></div>
+      <div class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 9l3.5-3.5M4 9l3.5 3.5"/><path d="M20 15H4M20 15l-3.5-3.5M20 15l-3.5 3.5"/></svg></div>
+    </div>
+  </div>
+
+</body>
+</html>
