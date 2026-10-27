@@ -165,6 +165,15 @@ export function PapRater() {
           return;
         }
 
+        // Same gate for moderation: a non-owner opening the link stays on the
+        // feed, and /admin checks the session again server-side.
+        if (sessionBody.owner && readStartTarget()?.type === "admin") {
+          markStartTargetHandled();
+          markPushedPage();
+          router.push("/admin");
+          return;
+        }
+
         // A `startapp=leaderboard*` link still passes the gates on the feed
         // first. Push the leaderboard on top of it so the native back button
         // returns to the feed inside the Mini App instead of closing it.

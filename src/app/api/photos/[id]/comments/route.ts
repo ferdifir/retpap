@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { addComment, deleteOwnComment, getPhotoSpots, getSpotComments } from "@/db/queries";
+import {
+  addComment,
+  deleteOwnComment,
+  getPhotoSpots,
+  getSpotComments,
+  isPhotoActive,
+} from "@/db/queries";
 import { getSessionUserId } from "@/lib/auth-server";
 import { MAX_COMMENT_LENGTH, normaliseComment } from "@/lib/comment-rules";
 
@@ -40,6 +46,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const photoId = await photoIdFrom(context);
   if (photoId === null) return Response.json({ error: "bad_photo" }, { status: 400 });
+  if (!(await isPhotoActive(photoId))) {
+    return Response.json({ error: "photo_not_found" }, { status: 404 });
+  }
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return Response.json({ error: "invalid_body" }, { status: 400 });

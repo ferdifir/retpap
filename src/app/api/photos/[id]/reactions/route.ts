@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { clearReaction, getPhotoSpots, reactToPhoto } from "@/db/queries";
+import { clearReaction, getPhotoSpots, isPhotoActive, reactToPhoto } from "@/db/queries";
 import { getSessionUserId } from "@/lib/auth-server";
 
 const bodySchema = z
@@ -21,6 +21,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const photoId = Number((await context.params).id);
   if (!Number.isInteger(photoId)) return Response.json({ error: "bad_photo" }, { status: 400 });
+  if (!(await isPhotoActive(photoId))) {
+    return Response.json({ error: "photo_not_found" }, { status: 404 });
+  }
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return Response.json({ error: "invalid_body" }, { status: 400 });

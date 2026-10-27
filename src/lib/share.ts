@@ -10,6 +10,9 @@ export const LEADERBOARD_START_PARAM = "leaderboard";
 /** Start parameter that opens the owner-only analytics page. */
 export const STATS_START_PARAM = "stats";
 
+/** Start parameter that opens the owner-only moderation page. */
+export const ADMIN_START_PARAM = "admin";
+
 /** Per-period `startapp` values, so each recap can link to its own tab. */
 const LEADERBOARD_START_PARAMS: Record<LeaderboardPeriod, string> = {
   all: LEADERBOARD_START_PARAM,
@@ -29,6 +32,7 @@ const PERIOD_BY_START_PARAM = new Map(
 export type StartTarget =
   | { type: "leaderboard"; period: LeaderboardPeriod }
   | { type: "stats" }
+  | { type: "admin" }
   | { type: "photo"; slug: string };
 
 const BOT_USERNAME =
@@ -64,6 +68,11 @@ export function statsUrl(): string {
   return "https://t.me/" + BOT_USERNAME + "?startapp=" + STATS_START_PARAM;
 }
 
+/** Deep link that opens the Mini App straight on the owner moderation page. */
+export function adminUrl(): string {
+  return "https://t.me/" + BOT_USERNAME + "?startapp=" + ADMIN_START_PARAM;
+}
+
 /** Deep link that opens the Mini App on one photo. */
 export function shareUrlFor(slug: string): string {
   return (
@@ -96,6 +105,7 @@ export function readStartTarget(): StartTarget | null {
 
   const lower = startParam.toLowerCase();
   if (lower === STATS_START_PARAM) return { type: "stats" };
+  if (lower === ADMIN_START_PARAM) return { type: "admin" };
 
   const period = PERIOD_BY_START_PARAM.get(lower);
   if (period) return { type: "leaderboard", period };

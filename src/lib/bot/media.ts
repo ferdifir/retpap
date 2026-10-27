@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 
@@ -45,6 +45,23 @@ export function videoUrl(slug: string): string {
 export function mediaPath(slug: string, ext: MediaExtension): string | null {
   if (!SLUG_PATTERN.test(slug)) return null;
   return path.join(uploadDir(), slug + "." + ext);
+}
+
+/**
+ * Deletes every stored file for one upload: the media itself plus the poster
+ * that video uses as its still frame. Missing files are not an error, so a
+ * hard delete can be retried after a partial failure.
+ */
+export async function deleteMedia(
+  slug: string,
+  mediaType: "photo" | "video",
+): Promise<void> {
+  const exts: MediaExtension[] = mediaType === "video" ? ["mp4", "jpg"] : ["jpg"];
+
+  for (const ext of exts) {
+    const file = mediaPath(slug, ext);
+    if (file) await rm(file, { force: true }).catch(() => undefined);
+  }
 }
 
 async function writeMedia(slug: string, ext: MediaExtension, bytes: Buffer): Promise<void> {

@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { getSessionUserId } from "@/lib/auth-server";
@@ -135,7 +136,15 @@ async function StatsContent() {
   return (
     <main className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain touch-pan-y px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <header className="space-y-1">
-        <h1 className="text-lg font-black text-slate-100">Analytics RetPAP</h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-lg font-black text-slate-100">Analytics RetPAP</h1>
+          <Link
+            href="/admin"
+            className="rounded-lg border border-white/10 px-2.5 py-1 text-[10px] font-bold text-slate-300 active:scale-95"
+          >
+            Admin
+          </Link>
+        </div>
         <p className="text-[11px] text-slate-500">
           Data first-party, zona waktu Asia/Jakarta. Angka engagement diambil dari tabel
           aslinya, bukan dari event.

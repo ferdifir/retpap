@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ratePhoto } from "@/db/queries";
+import { isPhotoActive, ratePhoto } from "@/db/queries";
 import { getSessionUserId } from "@/lib/auth-server";
 
 const bodySchema = z.object({ score: z.number().min(1).max(10) });
@@ -10,6 +10,9 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 
   const photoId = Number((await context.params).id);
   if (!Number.isInteger(photoId)) return Response.json({ error: "bad_photo" }, { status: 400 });
+  if (!(await isPhotoActive(photoId))) {
+    return Response.json({ error: "photo_not_found" }, { status: 404 });
+  }
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return Response.json({ error: "invalid_body" }, { status: 400 });

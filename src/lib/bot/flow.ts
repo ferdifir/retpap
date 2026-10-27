@@ -124,7 +124,7 @@ type ChannelMedia = {
  * undo the upload. For 18+ the blur is stronger and the badge is burned in;
  * if that fails, the original is only sent behind Telegram's spoiler.
  */
-async function postToChannel(
+export async function postToChannel(
   photoId: number,
   media: ChannelMedia,
   caption: string,

@@ -424,6 +424,19 @@ export async function reactToPhoto(
   });
 }
 
+/**
+ * Deactivated content is hidden from the feed and the leaderboard, but the
+ * mutation routes take a photo id directly, so they have to ask separately.
+ */
+export async function isPhotoActive(photoId: number): Promise<boolean> {
+  const { db } = getDb();
+  const [row] = await db
+    .select({ isActive: photos.isActive })
+    .from(photos)
+    .where(eq(photos.id, photoId));
+  return row?.isActive === true;
+}
+
 export async function ratePhoto(
   photoId: number,
   userId: number,

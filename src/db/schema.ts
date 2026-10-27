@@ -38,6 +38,10 @@ export const users = pgTable("users", {
   genderPreference: text("gender_preference"),
   /** Set by the owner after spam; the bot refuses new uploads but not reading. */
   uploadBlocked: boolean("upload_blocked").notNull().default(false),
+  /** When the ban was applied, so the admin page can sort by recency. */
+  uploadBlockedAt: timestamp("upload_blocked_at", { withTimezone: true }),
+  /** Owner's note, e.g. "spam nomor WA". Never shown to the user. */
+  uploadBlockedReason: text("upload_blocked_reason"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -329,6 +333,43 @@ export const notifications = pgTable(
     check(
       "notifications_kind_valid",
       sql`${table.kind} in ('comment', 'digest')`,
+    ),
+  ],
+);
+
+/**
+ * Every owner action from /admin, written in the same transaction as the change
+ * it describes. `payload.before` keeps enough of the old row to reconstruct it
+ * after a hard delete, which the deploy-time pg_dump cannot guarantee.
+ */
+export const adminActions = pgTable(
+  "admin_actions",
+  {
+    id: identity(),
+    actorTelegramId: bigint("actor_telegram_id", { mode: "number" }).notNull(),
+    /** e.g. "photo.nsfw", "photo.soft_delete", "user.block". */
+    action: text("action").notNull(),
+    /** "photo" | "user" */
+    targetType: text("target_type").notNull(),
+    targetId: bigint("target_id", { mode: "number" }).notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("admin_actions_target_idx").on(
+      table.targetType,
+      table.targetId,
+      table.createdAt,
+    ),
+    index("admin_actions_created_idx").on(table.createdAt),
+    check(
+      "admin_actions_target_type_valid",
+      sql`${table.targetType} in ('photo', 'user')`,
     ),
   ],
 );
