@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import {
   deactivatePhoto,
+  isUploadBlocked,
   markBotStarted,
   markChannelPost,
   markPhotoNsfw,
@@ -429,7 +430,23 @@ function commandOf(text: string | undefined): string | null {
   return text.slice(1).split(/[\s@]/)[0].toLowerCase();
 }
 
+/**
+ * Owner-imposed upload ban. Reading, rating and reacting stay available; only
+ * new uploads are refused, so a blocked account cannot spam again.
+ */
+async function canUpload(chatId: number, telegramId: number): Promise<boolean> {
+  if (!(await isUploadBlocked(telegramId))) return true;
+
+  await sendMessage(
+    chatId,
+    "Akunmu diblokir dari upload karena terdeteksi spam. Kamu masih bisa melihat dan memberi rate di feed.",
+  );
+  return false;
+}
+
 async function startUpload(chatId: number, telegramId: number): Promise<void> {
+  if (!(await canUpload(chatId, telegramId))) return;
+
   await saveUploadSession({
     telegramId,
     step: "photo",
@@ -509,6 +526,7 @@ async function showConfirmation(
 
 async function handlePhoto(message: BotMessage, user: TelegramUser): Promise<void> {
   if (!(await requireChannel(message.chat.id, user.id))) return;
+  if (!(await canUpload(message.chat.id, user.id))) return;
 
   const sizes = message.photo ?? [];
   // Telegram sends the sizes ascending, so the last entry is the largest.
@@ -560,6 +578,7 @@ async function handlePhoto(message: BotMessage, user: TelegramUser): Promise<voi
 
 async function handleVideo(message: BotMessage, user: TelegramUser): Promise<void> {
   if (!(await requireChannel(message.chat.id, user.id))) return;
+  if (!(await canUpload(message.chat.id, user.id))) return;
 
   const video = message.video;
   if (!video) return;
@@ -761,6 +780,12 @@ async function buildVideoPoster(video: Buffer, thumbnailFileId: string | null): 
 }
 
 async function publish(chatId: number, messageId: number, user: TelegramUser): Promise<void> {
+  // A session can be older than the ban, so the final gate re-checks it.
+  if (!(await canUpload(chatId, user.id))) {
+    await clearUploadSession(user.id);
+    return;
+  }
+
   const session = await getUploadSession(user.id);
 
   if (

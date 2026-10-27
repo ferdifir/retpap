@@ -492,6 +492,20 @@ export async function upsertUser(profile: {
 }
 
 /**
+ * True when the owner blocked this account from uploading. Missing rows are
+ * not blocked: the check runs before the first upsert on some paths.
+ */
+export async function isUploadBlocked(telegramId: number): Promise<boolean> {
+  const { db } = getDb();
+  const [row] = await db
+    .select({ blocked: users.uploadBlocked })
+    .from(users)
+    .where(eq(users.telegramId, telegramId));
+
+  return row?.blocked === true;
+}
+
+/**
  * Records that the user has started the bot. Called from the webhook, so the
  * Mini App can refuse to run for people who never pressed Start.
  */

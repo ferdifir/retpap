@@ -36,6 +36,8 @@ export const users = pgTable("users", {
   startedAt: timestamp("started_at", { withTimezone: true }),
   /** Feed filter chosen once; null until the user picks. */
   genderPreference: text("gender_preference"),
+  /** Set by the owner after spam; the bot refuses new uploads but not reading. */
+  uploadBlocked: boolean("upload_blocked").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
