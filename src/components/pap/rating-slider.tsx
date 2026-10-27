@@ -63,7 +63,7 @@ export function RatingSlider({
       ref={trackRef}
       role="slider"
       tabIndex={disabled ? -1 : 0}
-      aria-label="Beri nilai foto ini"
+      aria-label="Kasih rating foto ini"
       aria-orientation={horizontal ? "horizontal" : "vertical"}
       aria-valuemin={1}
       aria-valuemax={10}

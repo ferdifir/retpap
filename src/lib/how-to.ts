@@ -29,7 +29,7 @@ export const HOW_TO_TIPS: readonly HowToTip[] = [
   {
     key: "rate",
     title: "Geser slider kanan",
-    body: "memberi nilai 1 sampai 10.",
+    body: "kasih rating 1 sampai 10.",
   },
   {
     key: "swipe",
@@ -39,7 +39,7 @@ export const HOW_TO_TIPS: readonly HowToTip[] = [
   {
     key: "upload",
     title: "Upload PAP",
-    body: "lewat bot: /upload, kirim foto atau video (maks 30 detik, 20 MB), kirim caption, lalu tekan Upload.",
+    body: "lewat bot: /upload, kirim foto atau video (maks 1 menit, 20 MB), kirim caption, lalu tekan Upload.",
   },
 ];
 

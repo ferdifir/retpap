@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   applicationName: "RetPAP",
   openGraph: {
     title: "RetPAP — Telegram Mini App",
-    description: "Tap untuk bereaksi, geser untuk menilai, usap untuk pindah foto.",
+    description: "Tap untuk bereaksi, geser untuk kasih rating, usap untuk pindah foto.",
     type: "website",
   },
 };

@@ -1,4 +1,4 @@
-import { getFeed } from "@/db/queries";
+import { getFeed, getGenderPreference } from "@/db/queries";
 import { getSessionUserId } from "@/lib/auth-server";
 
 export async function GET() {
@@ -7,5 +7,8 @@ export async function GET() {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  return Response.json({ photos: await getFeed(userId) });
+  return Response.json({
+    photos: await getFeed(userId),
+    preference: await getGenderPreference(userId),
+  });
 }

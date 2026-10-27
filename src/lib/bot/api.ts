@@ -110,7 +110,7 @@ export function sendMessage(
 export function sendPhoto(
   chatId: number | string,
   photo: string,
-  options: { caption?: string; keyboard?: InlineKeyboardMarkup } = {},
+  options: { caption?: string; keyboard?: InlineKeyboardMarkup; spoiler?: boolean } = {},
 ): Promise<BotMessage> {
   return call<BotMessage>("sendPhoto", {
     chat_id: chatId,
@@ -118,6 +118,7 @@ export function sendPhoto(
     parse_mode: "HTML",
     ...(options.caption ? { caption: options.caption } : {}),
     ...(options.keyboard ? { reply_markup: options.keyboard } : {}),
+    ...(options.spoiler ? { has_spoiler: true } : {}),
   });
 }
 
@@ -128,7 +129,7 @@ export function sendPhoto(
 export function sendPhotoFile(
   chatId: number | string,
   bytes: Buffer,
-  options: { caption?: string; keyboard?: InlineKeyboardMarkup } = {},
+  options: { caption?: string; keyboard?: InlineKeyboardMarkup; spoiler?: boolean } = {},
 ): Promise<BotMessage> {
   const form = new FormData();
   form.append("chat_id", String(chatId));
@@ -136,6 +137,7 @@ export function sendPhotoFile(
   form.append("parse_mode", "HTML");
   if (options.caption) form.append("caption", options.caption);
   if (options.keyboard) form.append("reply_markup", JSON.stringify(options.keyboard));
+  if (options.spoiler) form.append("has_spoiler", "true");
 
   // No explicit content-type header: fetch adds the multipart boundary itself.
   return request<BotMessage>("sendPhoto", { body: form });
@@ -149,7 +151,7 @@ export function sendPhotoFile(
 export function sendVideoFile(
   chatId: number | string,
   bytes: Buffer,
-  options: { caption?: string; keyboard?: InlineKeyboardMarkup } = {},
+  options: { caption?: string; keyboard?: InlineKeyboardMarkup; spoiler?: boolean } = {},
 ): Promise<BotMessage> {
   const form = new FormData();
   form.append("chat_id", String(chatId));
@@ -157,6 +159,7 @@ export function sendVideoFile(
   form.append("parse_mode", "HTML");
   if (options.caption) form.append("caption", options.caption);
   if (options.keyboard) form.append("reply_markup", JSON.stringify(options.keyboard));
+  if (options.spoiler) form.append("has_spoiler", "true");
 
   return request<BotMessage>("sendVideo", { body: form });
 }

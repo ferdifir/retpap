@@ -47,8 +47,8 @@ ok()   { printf '%s✓%s %s\n' "$GREEN" "$RESET" "$*"; }
 warn() { printf '%s!%s %s\n' "$(printf '\033[33m')" "$RESET" "$*"; }
 die()  { printf '%s✗ %s%s\n' "$RED" "$*" "$RESET" >&2; exit 1; }
 
-SSH=(ssh -p "$SSH_PORT" -o ConnectTimeout=10 "$SSH_HOST")
-RSYNC_SSH="ssh -p $SSH_PORT -o ConnectTimeout=10"
+SSH=(ssh -p "$SSH_PORT" -o ConnectTimeout=30 -o ConnectionAttempts=3 -o ServerAliveInterval=10 "$SSH_HOST")
+RSYNC_SSH="ssh -p $SSH_PORT -o ConnectTimeout=30 -o ConnectionAttempts=3 -o ServerAliveInterval=10"
 
 # --- preflight -------------------------------------------------------------
 
@@ -83,7 +83,9 @@ step "Syncing source"
 RSYNC_ARGS=(-az --delete --human-readable --info=stats1
   --exclude node_modules --exclude .next --exclude .git
   --exclude '.env.local' --exclude 'tsconfig.tsbuildinfo'
-  --exclude 'Screenshot*.png')
+  --exclude 'Screenshot*.png'
+  # Runtime data lives inside the repo; a --delete sync must not wipe it.
+  --exclude 'inbox' --exclude 'scripts/.upload-state.json')
 
 if [ "$DRY_RUN" = 1 ]; then
   rsync "${RSYNC_ARGS[@]}" --dry-run -e "$RSYNC_SSH" ./ "$SSH_HOST:$REMOTE_DIR/"

@@ -1,3 +1,4 @@
+import { maybeAnnounceLeaderboards } from "@/lib/bot/leaderboard-announce";
 import { flushNotifications } from "@/lib/bot/notify";
 
 /** Called by the system cron every minute; authenticated with a shared secret. */
@@ -7,7 +8,10 @@ async function run(request: Request) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
-  return Response.json(await flushNotifications());
+  const notifications = await flushNotifications();
+  const leaderboard = await maybeAnnounceLeaderboards();
+
+  return Response.json({ ...notifications, leaderboard });
 }
 
 export async function GET(request: Request) {

@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import type { FeedSpot } from "@/lib/feed-types";
 import { REACTION_EMOJIS, searchReactions, type ReactionEmoji } from "@/lib/reactions/catalog";
-import { readRecentEmojis } from "@/lib/reactions/recent";
+import { useRecentEmojis } from "@/lib/reactions/recent";
 import { haptic } from "@/lib/telegram";
 
 type ReactionSheetProps = {
@@ -56,8 +56,7 @@ function EmojiCell({
  * transformed ancestor, where position:fixed would be trapped.
  */
 export function ReactionSheet({ spot, error, onPick, onClose }: ReactionSheetProps) {
-  // Mounted only after a tap, so the initializer never runs during SSR.
-  const [recent] = useState<string[]>(() => readRecentEmojis());
+  const recent = useRecentEmojis();
   const [query, setQuery] = useState("");
 
   const dialogRef = useRef<HTMLDivElement>(null);

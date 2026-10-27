@@ -225,3 +225,13 @@ Ini juga membuat snap radius di server konsisten antar device.
 1. `TELEGRAM_BOT_TOKEN` dari BotFather (untuk validasi; tanpa ini hanya bisa mode dev).
 2. Target hosting (Vercel + Neon/Supabase, atau VPS sendiri).
 3. Foto tetap dari Unsplash, atau diunggah ke storage sendiri?
+
+## 12. Leaderboard per periode + recap (retpap-leaderboard-periode)
+
+Status: **dikaburkan** — rencana ini sudah diterjemahkan ke kode.
+
+- Query: `getLeaderboard(period, limit, now)` membaca window dari `ratings.created_at` (WIB).
+- API: `GET /api/leaderboard?period=day|week|month|all`.
+- UI: tab `/leaderboard?period=…` lewat `useSearchParams` + Suspense.
+- Recap: `/api/cron/notify` → `maybeAnnounceLeaderboards()` → `src/lib/bot/leaderboard-announce.ts`.
+- DB: index `ratings_created_at_idx`, tabel `leaderboard_announcements`.

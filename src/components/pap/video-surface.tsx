@@ -32,6 +32,11 @@ export function VideoSurface({
   const ref = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
   const [blocked, setBlocked] = useState(false);
+  // Remaining-time badge: the countdown only needs one render per second, so
+  // `timeupdate` (≈4 Hz) is filtered through `lastSecond`.
+  const [currentTime, setCurrentTime] = useState(0);
+  const [loadedDuration, setLoadedDuration] = useState<number | null>(null);
+  const lastSecond = useRef(0);
   // Leaving the card resets sound, so the next video never starts unmuted.
   // Adjusting state during render is React's recommended prop-change pattern.
   const [wasActive, setWasActive] = useState(active);
@@ -62,6 +67,19 @@ export function VideoSurface({
       .catch(() => setBlocked(true));
   }, []);
 
+  // A new source starts from zero; the old progress must not leak into it.
+  // Adjusting state during render is React's recommended prop-change pattern.
+  const [lastSrc, setLastSrc] = useState(src);
+  if (src !== lastSrc) {
+    setLastSrc(src);
+    setCurrentTime(0);
+    setLoadedDuration(null);
+  }
+
+  const totalSeconds = loadedDuration ?? durationSeconds;
+  const remainingSeconds =
+    totalSeconds === null ? null : Math.max(0, totalSeconds - currentTime);
+
   const stopGesture = (event: SyntheticEvent) => {
     event.stopPropagation();
   };
@@ -78,9 +96,20 @@ export function VideoSurface({
         preload={active ? "metadata" : "none"}
         onLoadedMetadata={(event) => {
           const video = event.currentTarget;
+          lastSecond.current = 0;
           if (video.videoWidth > 0 && video.videoHeight > 0) {
             onIntrinsicSize?.(video.videoWidth, video.videoHeight);
           }
+          // The DB stores whole seconds; the element knows the exact length.
+          if (Number.isFinite(video.duration) && video.duration > 0) {
+            setLoadedDuration(video.duration);
+          }
+        }}
+        onTimeUpdate={(event) => {
+          const second = Math.floor(event.currentTarget.currentTime);
+          if (second === lastSecond.current) return;
+          lastSecond.current = second;
+          setCurrentTime(event.currentTarget.currentTime);
         }}
         className="pointer-events-none absolute inset-0 size-full select-none object-contain"
       />
@@ -119,9 +148,9 @@ export function VideoSurface({
         </div>
       ) : null}
 
-      {durationSeconds !== null && active ? (
+      {remainingSeconds !== null && active ? (
         <span className="pointer-events-none absolute bottom-2 right-2 z-20 rounded-full bg-slate-950/75 px-2 py-1 text-[10px] font-bold tabular-nums text-slate-100 backdrop-blur-sm">
-          {formatDuration(durationSeconds)}
+          {formatDuration(Math.ceil(remainingSeconds))}
         </span>
       ) : null}
     </>

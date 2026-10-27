@@ -1,11 +1,35 @@
-import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { commentNotificationBody } from "@/lib/bot/format";
+import {
+  LEADERBOARD_PERIODS,
+  leaderboardWindow,
+} from "@/lib/leaderboard-period";
 import { isReactionEmoji } from "@/lib/reactions/catalog";
-import { findSpotAt, sortReactionSummary, type ReactionSummary } from "@/lib/reaction-rules";
+import {
+  findSpotAt,
+  sortReactionSummary,
+  type ReactionSummary,
+} from "@/lib/reaction-rules";
 import { getDb, type Db } from "./client";
-import { comments, notifications, photos, ratings, reactions, spots, users } from "./schema";
+import {
+  comments,
+  leaderboardAnnouncements,
+  notifications,
+  photos,
+  ratings,
+  reactions,
+  spots,
+  users,
+} from "./schema";
 
-import type { FeedComment, FeedPhoto, FeedSpot, LeaderboardEntry } from "@/lib/feed-types";
+import type {
+  FeedComment,
+  FeedPhoto,
+  FeedSpot,
+  LeaderboardEntry,
+  LeaderboardPeriod,
+  LeaderboardResult,
+} from "@/lib/feed-types";
 
 export type { FeedPhoto, FeedSpot };
 
@@ -34,13 +58,46 @@ function summarise(
   };
 }
 
+export type GenderPreference = "female" | "male" | "all";
+
+/** null means the user has never picked; the feed then shows everything. */
+export async function getGenderPreference(
+  userId: number,
+): Promise<GenderPreference | null> {
+  const { db } = getDb();
+
+  const [row] = await db
+    .select({ preference: users.genderPreference })
+    .from(users)
+    .where(eq(users.id, userId));
+
+  const value = row?.preference;
+  return value === "female" || value === "male" || value === "all" ? value : null;
+}
+
+export async function setGenderPreference(
+  userId: number,
+  preference: GenderPreference,
+): Promise<void> {
+  const { db } = getDb();
+  await db.update(users).set({ genderPreference: preference }).where(eq(users.id, userId));
+}
+
 export async function getFeed(userId: number): Promise<FeedPhoto[]> {
   const { db } = getDb();
+
+  // Unlabelled rows stay visible under every filter, so older uploads do not
+  // disappear when a user picks a side.
+  const preference = await getGenderPreference(userId);
+  const genderFilter =
+    preference === "female" || preference === "male"
+      ? or(eq(photos.gender, preference), isNull(photos.gender))
+      : undefined;
 
   const photoRows = await db
     .select()
     .from(photos)
-    .where(eq(photos.isActive, true))
+    .where(and(eq(photos.isActive, true), genderFilter))
     // Newest upload first: the deck opens on the most recent photo.
     .orderBy(desc(photos.id));
 
@@ -92,7 +149,10 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
           y: spot.y,
           total: summary.total,
           myEmoji: summary.myEmoji,
-          reactions: summary.reactions.map(({ emoji, count }) => ({ emoji, count })),
+          reactions: summary.reactions.map(({ emoji, count }) => ({
+            emoji,
+            count,
+          })),
           comments: commentRows.filter((row) => row.spotId === spot.id).length,
         };
       })
@@ -109,8 +169,13 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
       durationSeconds: photo.durationSeconds,
       imageWidth: photo.imageWidth,
       imageHeight: photo.imageHeight,
+      isNsfw: photo.isNsfw,
+      gender: photo.gender === "female" || photo.gender === "male" ? photo.gender : null,
       rating: {
-        avg: photoRatings.length > 0 ? Math.round((sum / photoRatings.length) * 10) / 10 : 0,
+        avg:
+          photoRatings.length > 0
+            ? Math.round((sum / photoRatings.length) * 10) / 10
+            : 0,
         votes: photoRatings.length,
         mine: photoRatings.find((row) => row.userId === userId)?.score ?? null,
       },
@@ -120,11 +185,19 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
 }
 
 /**
- * All-time top PAP by average rating. Only media with at least three voters
- * qualifies; ties fall back to the larger voter count, then the newer upload.
+ * Top PAP for one period. Only ratings written inside the window count, so an
+ * old upload can still win today when it gets fresh scores. Qualifying needs
+ * `minVotes` ratings; ties fall back to the larger voter count, then the newer
+ * upload.
  */
-export async function getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
+export async function getLeaderboard(
+  period: LeaderboardPeriod = "all",
+  limit = 10,
+  now: Date = new Date(),
+): Promise<LeaderboardResult> {
   const { db } = getDb();
+  const { minVotes } = LEADERBOARD_PERIODS[period];
+  const window = leaderboardWindow(period, now);
 
   const rows = await db
     .select({
@@ -141,9 +214,15 @@ export async function getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
     })
     .from(photos)
     .innerJoin(ratings, eq(ratings.photoId, photos.id))
-    .where(eq(photos.isActive, true))
+    .where(
+      and(
+        eq(photos.isActive, true),
+        window.start ? gte(ratings.createdAt, window.start) : undefined,
+        window.end ? lt(ratings.createdAt, window.end) : undefined,
+      ),
+    )
     .groupBy(photos.id)
-    .having(sql`count(${ratings.userId}) >= 3`)
+    .having(sql`count(${ratings.userId}) >= ${minVotes}`)
     .orderBy(
       sql`avg(${ratings.score}) desc`,
       sql`count(${ratings.userId}) desc`,
@@ -152,21 +231,34 @@ export async function getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
     )
     .limit(limit);
 
-  return rows.map((row) => ({
-    ...row,
-    mediaType: row.mediaType === "video" ? "video" : "photo",
-    avg: Number(row.avg),
-  }));
+  return {
+    period,
+    minVotes,
+    start: window.start?.toISOString() ?? null,
+    end: window.end?.toISOString() ?? null,
+    entries: rows.map((row) => ({
+      ...row,
+      mediaType: row.mediaType === "video" ? "video" : "photo",
+      avg: Number(row.avg),
+    })) satisfies LeaderboardEntry[],
+  };
 }
 
-export async function getSpotSummary(spotId: number, userId: number): Promise<FeedSpot | null> {
+export async function getSpotSummary(
+  spotId: number,
+  userId: number,
+): Promise<FeedSpot | null> {
   const { db } = getDb();
 
   const [spot] = await db.select().from(spots).where(eq(spots.id, spotId));
   if (!spot) return null;
 
   const rows = await db
-    .select({ id: reactions.id, emoji: reactions.emoji, userId: reactions.userId })
+    .select({
+      id: reactions.id,
+      emoji: reactions.emoji,
+      userId: reactions.userId,
+    })
     .from(reactions)
     .where(eq(reactions.spotId, spotId))
     .orderBy(reactions.id);
@@ -226,7 +318,10 @@ async function resolveSpot(
   tx: Tx,
   photo: { id: number; imageWidth: number; imageHeight: number },
   input: SpotTarget,
-): Promise<{ ok: true; spotId: number } | { ok: false; reason: "spot_not_found" | "invalid_target" }> {
+): Promise<
+  | { ok: true; spotId: number }
+  | { ok: false; reason: "spot_not_found" | "invalid_target" }
+> {
   if (input.spotId !== undefined) {
     const [spot] = await tx
       .select()
@@ -240,8 +335,16 @@ async function resolveSpot(
     return { ok: false, reason: "invalid_target" };
   }
 
-  const existing = await tx.select().from(spots).where(eq(spots.photoId, photo.id));
-  const snapped = findSpotAt(existing, input.x, input.y, photo.imageHeight / photo.imageWidth);
+  const existing = await tx
+    .select()
+    .from(spots)
+    .where(eq(spots.photoId, photo.id));
+  const snapped = findSpotAt(
+    existing,
+    input.x,
+    input.y,
+    photo.imageHeight / photo.imageWidth,
+  );
   if (snapped !== null) return { ok: true, spotId: snapped };
 
   const [created] = await tx
@@ -252,10 +355,18 @@ async function resolveSpot(
   return { ok: true, spotId: created.id };
 }
 
-export type ReactInput = { spotId?: number; x?: number; y?: number; emoji: string };
+export type ReactInput = {
+  spotId?: number;
+  x?: number;
+  y?: number;
+  emoji: string;
+};
 export type ReactOutcome =
   | { ok: true; spotId: number; removed: boolean }
-  | { ok: false; reason: "spot_not_found" | "invalid_target" | "unknown_emoji" };
+  | {
+      ok: false;
+      reason: "spot_not_found" | "invalid_target" | "unknown_emoji";
+    };
 
 export async function reactToPhoto(
   photoId: number,
@@ -266,7 +377,11 @@ export async function reactToPhoto(
 
   return db.transaction(async (tx) => {
     // Serialise reactions for one photo so the capacity check is race-free.
-    const [photo] = await tx.select().from(photos).where(eq(photos.id, photoId)).for("update");
+    const [photo] = await tx
+      .select()
+      .from(photos)
+      .where(eq(photos.id, photoId))
+      .for("update");
     if (!photo) return { ok: false, reason: "invalid_target" } as const;
 
     const [mine] = await tx
@@ -297,17 +412,23 @@ export async function reactToPhoto(
         .update(reactions)
         .set({ spotId, emoji: input.emoji })
         .where(eq(reactions.id, mine.id));
-      if (previousSpotId !== spotId) await deleteSpotIfEmpty(tx, previousSpotId);
+      if (previousSpotId !== spotId)
+        await deleteSpotIfEmpty(tx, previousSpotId);
     } else {
-      await tx.insert(reactions).values({ photoId, spotId, userId, emoji: input.emoji });
+      await tx
+        .insert(reactions)
+        .values({ photoId, spotId, userId, emoji: input.emoji });
     }
 
     return { ok: true, spotId, removed: false } as const;
   });
 }
 
-
-export async function ratePhoto(photoId: number, userId: number, score: number) {
+export async function ratePhoto(
+  photoId: number,
+  userId: number,
+  score: number,
+) {
   const { db } = getDb();
 
   await db
@@ -318,7 +439,10 @@ export async function ratePhoto(photoId: number, userId: number, score: number) 
       set: { score, updatedAt: new Date() },
     });
 
-  const rows = await db.select({ score: ratings.score }).from(ratings).where(eq(ratings.photoId, photoId));
+  const rows = await db
+    .select({ score: ratings.score })
+    .from(ratings)
+    .where(eq(ratings.photoId, photoId));
   const sum = rows.reduce((total, row) => total + row.score, 0);
 
   return {
@@ -399,7 +523,10 @@ export async function markBotStarted(profile: {
     });
 }
 
-export async function clearReaction(photoId: number, userId: number): Promise<number | null> {
+export async function clearReaction(
+  photoId: number,
+  userId: number,
+): Promise<number | null> {
   const { db } = getDb();
 
   return db.transaction(async (tx) => {
@@ -428,7 +555,9 @@ export type PendingNotification = {
 };
 
 /** Oldest unsent notifications, joined with the data the sender needs. */
-export async function takePendingNotifications(limit = 20): Promise<PendingNotification[]> {
+export async function takePendingNotifications(
+  limit = 20,
+): Promise<PendingNotification[]> {
   const { db } = getDb();
 
   const rows = await db
@@ -453,10 +582,16 @@ export async function takePendingNotifications(limit = 20): Promise<PendingNotif
 
 export async function markNotificationSent(id: number): Promise<void> {
   const { db } = getDb();
-  await db.update(notifications).set({ sentAt: new Date() }).where(eq(notifications.id, id));
+  await db
+    .update(notifications)
+    .set({ sentAt: new Date() })
+    .where(eq(notifications.id, id));
 }
 
-export async function markNotificationFailed(id: number, error: string): Promise<void> {
+export async function markNotificationFailed(
+  id: number,
+  error: string,
+): Promise<void> {
   const { db } = getDb();
   await db
     .update(notifications)
@@ -464,18 +599,110 @@ export async function markNotificationFailed(id: number, error: string): Promise
     .where(eq(notifications.id, id));
 }
 
-export async function setNotify(userId: number, enabled: boolean): Promise<void> {
+export type LeaderboardAnnouncementKind = "daily" | "weekly" | "monthly";
+
+export type LeaderboardAnnouncement = {
+  id: number;
+  kind: LeaderboardAnnouncementKind;
+  periodStart: Date;
+  periodEnd: Date;
+  messageId: number | null;
+  attempts: number;
+  error: string | null;
+  sentAt: Date | null;
+};
+
+/**
+ * Claims a period for sending. The unique key makes this the idempotency gate:
+ * the first caller gets a fresh row, later callers get the existing one so a
+ * failed send can still be retried.
+ */
+export async function claimLeaderboardAnnouncement(input: {
+  kind: LeaderboardAnnouncementKind;
+  periodStart: Date;
+  periodEnd: Date;
+}): Promise<LeaderboardAnnouncement> {
+  const { db } = getDb();
+
+  const [inserted] = await db
+    .insert(leaderboardAnnouncements)
+    .values(input)
+    .onConflictDoNothing({
+      target: [
+        leaderboardAnnouncements.kind,
+        leaderboardAnnouncements.periodStart,
+      ],
+    })
+    .returning();
+
+  if (inserted) return toAnnouncement(inserted);
+
+  const [existing] = await db
+    .select()
+    .from(leaderboardAnnouncements)
+    .where(
+      and(
+        eq(leaderboardAnnouncements.kind, input.kind),
+        eq(leaderboardAnnouncements.periodStart, input.periodStart),
+      ),
+    );
+
+  if (!existing) throw new Error("leaderboard announcement claim disappeared");
+  return toAnnouncement(existing);
+}
+
+function toAnnouncement(
+  row: typeof leaderboardAnnouncements.$inferSelect,
+): LeaderboardAnnouncement {
+  return { ...row, kind: row.kind as LeaderboardAnnouncementKind };
+}
+
+/** Success, and the deliberate skip after a period had no qualifiers. */
+export async function markLeaderboardAnnouncementSent(
+  id: number,
+  messageId: number | null,
+): Promise<void> {
+  const { db } = getDb();
+  await db
+    .update(leaderboardAnnouncements)
+    .set({ messageId, sentAt: new Date(), error: null })
+    .where(eq(leaderboardAnnouncements.id, id));
+}
+
+export async function markLeaderboardAnnouncementFailed(
+  id: number,
+  error: string,
+): Promise<void> {
+  const { db } = getDb();
+  await db
+    .update(leaderboardAnnouncements)
+    .set({ attempts: sql`${leaderboardAnnouncements.attempts} + 1`, error })
+    .where(eq(leaderboardAnnouncements.id, id));
+}
+
+export async function setNotify(
+  userId: number,
+  enabled: boolean,
+): Promise<void> {
   const { db } = getDb();
   await db.update(users).set({ notify: enabled }).where(eq(users.id, userId));
 }
 
-export async function setNotifyByTelegram(telegramId: number, enabled: boolean): Promise<void> {
+export async function setNotifyByTelegram(
+  telegramId: number,
+  enabled: boolean,
+): Promise<void> {
   const { db } = getDb();
-  await db.update(users).set({ notify: enabled }).where(eq(users.telegramId, telegramId));
+  await db
+    .update(users)
+    .set({ notify: enabled })
+    .where(eq(users.telegramId, telegramId));
 }
 
 /** Flips the switch and reports the new state. */
-export async function toggleNotifyByTelegram(telegramId: number): Promise<boolean> {
+export async function toggleNotifyByTelegram(
+  telegramId: number,
+): Promise<boolean> {
   const { db } = getDb();
   const [row] = await db
     .select({ notify: users.notify })
@@ -483,7 +710,10 @@ export async function toggleNotifyByTelegram(telegramId: number): Promise<boolea
     .where(eq(users.telegramId, telegramId));
 
   const next = !(row?.notify ?? true);
-  await db.update(users).set({ notify: next }).where(eq(users.telegramId, telegramId));
+  await db
+    .update(users)
+    .set({ notify: next })
+    .where(eq(users.telegramId, telegramId));
   return next;
 }
 
@@ -501,7 +731,9 @@ export type DigestCandidate = {
  * Photos with fresh activity and an owner who still wants notifications.
  * Digests are throttled to one per photo per 15 minutes.
  */
-export async function listDigestCandidates(limit = 10): Promise<DigestCandidate[]> {
+export async function listDigestCandidates(
+  limit = 10,
+): Promise<DigestCandidate[]> {
   const { db } = getDb();
 
   const result = await db.execute(sql`
@@ -530,11 +762,17 @@ export async function listDigestCandidates(limit = 10): Promise<DigestCandidate[
 
 export async function markDigestSent(photoId: number): Promise<void> {
   const { db } = getDb();
-  await db.update(photos).set({ lastDigestAt: new Date() }).where(eq(photos.id, photoId));
+  await db
+    .update(photos)
+    .set({ lastDigestAt: new Date() })
+    .where(eq(photos.id, photoId));
 }
 
 /** Rebuilds every spot of one photo. Used to reconcile after a write. */
-export async function getPhotoSpots(photoId: number, userId: number): Promise<FeedSpot[]> {
+export async function getPhotoSpots(
+  photoId: number,
+  userId: number,
+): Promise<FeedSpot[]> {
   const { db } = getDb();
 
   const spotRows = await db
@@ -546,7 +784,12 @@ export async function getPhotoSpots(photoId: number, userId: number): Promise<Fe
   if (spotRows.length === 0) return [];
 
   const rows = await db
-    .select({ id: reactions.id, spotId: reactions.spotId, userId: reactions.userId, emoji: reactions.emoji })
+    .select({
+      id: reactions.id,
+      spotId: reactions.spotId,
+      userId: reactions.userId,
+      emoji: reactions.emoji,
+    })
     .from(reactions)
     .where(eq(reactions.photoId, photoId))
     .orderBy(reactions.id);
@@ -558,7 +801,9 @@ export async function getPhotoSpots(photoId: number, userId: number): Promise<Fe
 
   return spotRows.flatMap((spot) => {
     const atSpot = rows.filter((row) => row.spotId === spot.id);
-    const commentCount = commentRows.filter((row) => row.spotId === spot.id).length;
+    const commentCount = commentRows.filter(
+      (row) => row.spotId === spot.id,
+    ).length;
     if (atSpot.length === 0 && commentCount === 0) return [];
 
     const summary = summarise(atSpot, userId);
@@ -570,14 +815,22 @@ export async function getPhotoSpots(photoId: number, userId: number): Promise<Fe
         y: spot.y,
         total: summary.total,
         myEmoji: summary.myEmoji,
-        reactions: summary.reactions.map(({ emoji, count }) => ({ emoji, count })),
+        reactions: summary.reactions.map(({ emoji, count }) => ({
+          emoji,
+          count,
+        })),
         comments: commentCount,
       },
     ];
   });
 }
 
-export type CommentInput = { spotId?: number; x?: number; y?: number; body: string };
+export type CommentInput = {
+  spotId?: number;
+  x?: number;
+  y?: number;
+  body: string;
+};
 export type CommentOutcome =
   | { ok: true; spotId: number }
   | { ok: false; reason: "spot_not_found" | "invalid_target" };
@@ -594,7 +847,11 @@ export async function addComment(
   const { db } = getDb();
 
   return db.transaction(async (tx) => {
-    const [photo] = await tx.select().from(photos).where(eq(photos.id, photoId)).for("update");
+    const [photo] = await tx
+      .select()
+      .from(photos)
+      .where(eq(photos.id, photoId))
+      .for("update");
     if (!photo) return { ok: false, reason: "invalid_target" } as const;
 
     const resolved = await resolveSpot(tx, photo, input);
@@ -609,9 +866,14 @@ export async function addComment(
       const previousSpotId = mine.spotId;
       await tx
         .update(comments)
-        .set({ spotId: resolved.spotId, body: input.body, createdAt: new Date() })
+        .set({
+          spotId: resolved.spotId,
+          body: input.body,
+          createdAt: new Date(),
+        })
         .where(eq(comments.id, mine.id));
-      if (previousSpotId !== resolved.spotId) await deleteSpotIfEmpty(tx, previousSpotId);
+      if (previousSpotId !== resolved.spotId)
+        await deleteSpotIfEmpty(tx, previousSpotId);
       return { ok: true, spotId: resolved.spotId } as const;
     }
 
@@ -627,8 +889,14 @@ export async function addComment(
 
     // Notify the uploader, unless they are the one commenting.
     if (photo.userId && photo.userId !== userId) {
-      const [owner] = await tx.select().from(users).where(eq(users.id, photo.userId));
-      const [author] = await tx.select().from(users).where(eq(users.id, userId));
+      const [owner] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, photo.userId));
+      const [author] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, userId));
 
       if (owner?.notify && author) {
         await tx
@@ -711,12 +979,65 @@ export async function getSpotComments(
 }
 
 /** Remembers the channel post so a manual delete can remove it as well. */
-export async function markChannelPost(photoId: number, messageId: number): Promise<void> {
+export async function markChannelPost(
+  photoId: number,
+  messageId: number,
+): Promise<void> {
   const { db } = getDb();
-  await db.update(photos).set({ channelMessageId: messageId }).where(eq(photos.id, photoId));
+  await db
+    .update(photos)
+    .set({ channelMessageId: messageId })
+    .where(eq(photos.id, photoId));
 }
 
-export async function getUserTelegramId(userId: number): Promise<number | null> {
+export type NsfwPhoto = {
+  slug: string;
+  caption: string;
+  mediaType: "photo" | "video";
+  channelMessageId: number | null;
+  isActive: boolean;
+  /** True when the row was already 18+ before this call. */
+  wasNsfw: boolean;
+};
+
+/**
+ * Marks a photo 18+. The owner action also needs the stored file data so the
+ * channel post can be rebuilt, hence the returned row.
+ */
+export async function markPhotoNsfw(photoId: number): Promise<NsfwPhoto | null> {
+  const { db } = getDb();
+
+  const [row] = await db
+    .select({
+      slug: photos.slug,
+      caption: photos.caption,
+      mediaType: photos.mediaType,
+      channelMessageId: photos.channelMessageId,
+      isActive: photos.isActive,
+      isNsfw: photos.isNsfw,
+    })
+    .from(photos)
+    .where(eq(photos.id, photoId));
+
+  if (!row) return null;
+
+  if (!row.isNsfw) {
+    await db.update(photos).set({ isNsfw: true }).where(eq(photos.id, photoId));
+  }
+
+  return {
+    slug: row.slug,
+    caption: row.caption,
+    mediaType: row.mediaType === "video" ? "video" : "photo",
+    channelMessageId: row.channelMessageId,
+    isActive: row.isActive,
+    wasNsfw: row.isNsfw,
+  };
+}
+
+export async function getUserTelegramId(
+  userId: number,
+): Promise<number | null> {
   const { db } = getDb();
 
   const [row] = await db
@@ -737,7 +1058,9 @@ export type RemovedPhoto = {
  * Hides a photo from the feed (getFeed only reads active rows) and returns what
  * the bot still has to clean up: the channel post and the uploader notice.
  */
-export async function deactivatePhoto(photoId: number): Promise<RemovedPhoto | null> {
+export async function deactivatePhoto(
+  photoId: number,
+): Promise<RemovedPhoto | null> {
   const { db } = getDb();
 
   return db.transaction(async (tx) => {
@@ -753,7 +1076,10 @@ export async function deactivatePhoto(photoId: number): Promise<RemovedPhoto | n
 
     if (!row) return null;
 
-    await tx.update(photos).set({ isActive: false }).where(eq(photos.id, photoId));
+    await tx
+      .update(photos)
+      .set({ isActive: false })
+      .where(eq(photos.id, photoId));
 
     return {
       slug: row.slug,

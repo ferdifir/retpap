@@ -57,6 +57,41 @@
       "when": 1792681674974,
       "tag": "0007_plain_adam_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792923041119,
+      "tag": "0008_nice_wasp",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792996135134,
+      "tag": "0009_many_shadowcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793015485875,
+      "tag": "0010_fixed_marvel_zombies",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793073112301,
+      "tag": "0011_melted_purifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793085141651,
+      "tag": "0012_analytics_events",
+      "breakpoints": true
     }
   ]
 }

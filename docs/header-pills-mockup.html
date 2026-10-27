@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 4 pill header — RetPAP</title>
+<style>
+  :root {
+    --cyan: #22d3ee;
+    --amber: #fbbf24;
+    --sky: #38bdf8;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --line: rgba(148, 163, 184, .18);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #070b14; color: var(--text); }
+  body {
+    min-height: 100vh;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background:
+      radial-gradient(ellipse at 12% 0%, rgba(34, 211, 238, .10), transparent 38%),
+      radial-gradient(ellipse at 88% 8%, rgba(251, 191, 36, .07), transparent 34%),
+      #070b14;
+  }
+  .page { padding: 32px; }
+  h1 { font-size: 16px; margin: 0 0 6px; }
+  p.lead { margin: 0 0 26px; font-size: 12px; line-height: 1.65; color: var(--muted); max-width: 1000px; }
+  p.lead b { color: var(--text); }
+
+  .wrap {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, 390px);
+    gap: 28px;
+    justify-content: center;
+    align-items: start;
+  }
+  @media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 390px); } .page { padding: 16px; } }
+
+  .label {
+    font-size: 11px; font-weight: 800; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+    margin: 0 0 8px;
+  }
+  .label b { color: var(--cyan); }
+  .note { font-size: 10.5px; line-height: 1.55; color: var(--muted); margin: 10px 2px 0; max-width: 390px; }
+  .note b { color: var(--text); }
+
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 620px;
+    border-radius: 34px;
+    overflow: hidden;
+    background: #0b1220;
+    border: 1px solid #1e293b;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+    display: flex;
+    flex-direction: column;
+    padding: 12px 10px 14px;
+    gap: 10px;
+  }
+
+  /* ---------- header ---------- */
+  .glass {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: linear-gradient(160deg, rgba(30, 41, 59, .72), rgba(15, 23, 42, .82));
+    backdrop-filter: blur(10px);
+  }
+  .score { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .orb {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center; flex-shrink: 0;
+    border: 1px solid rgba(251, 191, 36, .35);
+    background: radial-gradient(circle at 35% 30%, rgba(251, 191, 36, .35), rgba(15, 23, 42, .9));
+    font-size: 15px;
+  }
+  .score b { color: var(--amber); font-size: 15px; }
+  .score small { font-size: 10.5px; color: var(--muted); }
+
+  .actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+  .pill {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: rgba(30, 41, 59, .55);
+    color: #cbd5e1;
+    cursor: pointer;
+    padding: 0;
+    transition: transform .18s cubic-bezier(.2, .9, .3, 1.2),
+                color .18s ease, background-color .18s ease,
+                border-color .18s ease, box-shadow .18s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pill svg { width: 14px; height: 14px; transition: transform .18s ease; }
+  .pill:hover { color: #fff; }
+  .pill:active { transform: scale(.88); }
+  .pill:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+  .pill.is-on { color: #67e8f9; border-color: rgba(34, 211, 238, .45); background: rgba(8, 47, 73, .55); }
+  .pill.pop svg { animation: pop .32s cubic-bezier(.2, .9, .3, 1.4); }
+  @keyframes pop { 0% { transform: scale(.6) rotate(-12deg); } 60% { transform: scale(1.18) rotate(4deg); } 100% { transform: scale(1) rotate(0); } }
+
+  /* ---------- A: micro-interaction ---------- */
+  [data-variant="a"] .pill:hover { transform: translateY(-1px); }
+  [data-variant="a"] .pill:hover svg { transform: scale(1.08); }
+  [data-variant="a"] .pill.is-on { box-shadow: 0 0 0 1px rgba(34, 211, 238, .28); }
+
+  /* ---------- B: color-coded + glow ---------- */
+  [data-variant="b"] .pill { border-color: rgba(148, 163, 184, .16); }
+  [data-variant="b"] .pill::before {
+    content: "";
+    position: absolute; inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(140deg, var(--accent), transparent 62%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity .2s ease;
+    pointer-events: none;
+  }
+  [data-variant="b"] .pill:hover::before,
+  [data-variant="b"] .pill.is-on::before { opacity: 1; }
+  [data-variant="b"] .pill:hover {
+    transform: translateY(-1.5px);
+    color: var(--accent);
+    box-shadow: 0 8px 18px -10px var(--accent), 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  [data-variant="b"] .pill.is-on {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, rgba(15, 23, 42, .85));
+    box-shadow: 0 0 18px -6px var(--accent);
+  }
+  [data-variant="b"] .pill.gender { --accent: #22d3ee; }
+  [data-variant="b"] .pill.eye { --accent: #fbbf24; }
+  [data-variant="b"] .pill.share { --accent: #38bdf8; }
+  [data-variant="b"] .pill.trophy { --accent: #f59e0b; }
+  [data-variant="b"] .pill.trophy:hover svg { animation: wiggle .5s ease; }
+  @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 60% { transform: rotate(7deg); } 80% { transform: rotate(-3deg); } }
+
+  .ripple {
+    position: absolute;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .5;
+    transform: translate(-50%, -50%) scale(0);
+    animation: ripple .55s ease-out forwards;
+    pointer-events: none;
+  }
+  @keyframes ripple { to { transform: translate(-50%, -50%) scale(6); opacity: 0; } }
+
+  /* ---------- C: segmented bar ---------- */
+  [data-variant="c"] .actions {
+    position: relative;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(15, 23, 42, .7);
+    overflow: hidden;
+  }
+  [data-variant="c"] .seg-highlight {
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 32px; height: 32px;
+    border-radius: 999px;
+    background: linear-gradient(140deg, rgba(34, 211, 238, .28), rgba(56, 189, 248, .12));
+    border: 1px solid rgba(34, 211, 238, .45);
+    box-shadow: 0 0 16px -4px rgba(34, 211, 238, .55);
+    transition: transform .28s cubic-bezier(.3, 1.2, .4, 1), width .28s ease;
+    pointer-events: none;
+  }
+  [data-variant="c"] .pill { border-color: transparent; background: transparent; }
+  [data-variant="c"] .pill:hover { color: #fff; }
+  [data-variant="c"] .pill.is-active-icon { color: #a5f3fc; }
+
+  /* ---------- D: ambient loop ---------- */
+  [data-variant="d"] .pill svg { animation: float 3.4s ease-in-out infinite; }
+  [data-variant="d"] .pill:nth-of-type(1) svg { animation-delay: 0s; }
+  [data-variant="d"] .pill:nth-of-type(2) svg { animation-delay: .35s; }
+  [data-variant="d"] .pill:nth-of-type(3) svg { animation-delay: .7s; }
+  [data-variant="d"] .pill:nth-of-type(4) svg { animation-delay: 1.05s; }
+  [data-variant="d"] .pill.is-on { animation: breathe 2.6s ease-in-out infinite; }
+  [data-variant="d"] .pill.gender { color: #67e8f9; }
+  @keyframes float {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-2.5px) rotate(-3deg); }
+  }
+  @keyframes breathe {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
+    50% { box-shadow: 0 0 18px -3px rgba(34, 211, 238, .6); }
+  }
+
+  /* ---------- E: animated emoji ---------- */
+  [data-variant="e"] .pill { border-color: rgba(148, 163, 184, .14); background: rgba(15, 23, 42, .55); }
+  [data-variant="e"] .pill img {
+    width: 18px; height: 18px;
+    display: block;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .45));
+    transition: transform .18s cubic-bezier(.2, .9, .3, 1.3);
+  }
+  [data-variant="e"] .pill:hover { transform: translateY(-1px); border-color: rgba(34, 211, 238, .35); }
+  [data-variant="e"] .pill:hover img { transform: scale(1.12); }
+  [data-variant="e"] .pill:active img { transform: scale(.9); }
+  [data-variant="e"] .pill.is-on { border-color: rgba(34, 211, 238, .45); box-shadow: 0 0 14px -4px rgba(34, 211, 238, .5); }
+
+  /* ---------- card ---------- */
+  .card { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+  .photo {
+    position: relative;
+    flex: 1; min-height: 0;
+    border-radius: 22px;
+    overflow: hidden;
+    border: 1px solid #1e293b;
+    background: #020617;
+  }
+  .photo img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    filter: blur(2px) brightness(.9);
+    transform: scale(1.02);
+  }
+  .caption {
+    border-radius: 12px;
+    border: 1px solid #1e293b;
+    background: rgba(15, 23, 42, .6);
+    padding: 7px 10px;
+    text-align: center;
+    font-size: 11px; font-weight: 600;
+    color: #e2e8f0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    flex-shrink: 0;
+  }
+  .nav { display: flex; gap: 8px; flex-shrink: 0; }
+  .nav button {
+    flex: 1; padding: 9px 8px; border-radius: 11px;
+    border: 1px solid var(--line);
+    background: rgba(15, 23, 42, .55);
+    color: #cbd5e1; font-size: 11px; font-weight: 700;
+    font-family: inherit;
+  }
+
+  .hint {
+    margin-top: 14px; font-size: 11px; color: var(--muted); line-height: 1.6;
+  }
+  .hint b { color: var(--text); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Mockup 4 pill header — RetPAP</h1>
+  <p class="lead">
+    Lima varian animasi untuk tombol <b>filter gender</b>, <b>reaksi</b>, <b>share</b>, dan <b>leaderboard</b>.
+    Semua bisa diklik: gender berganti ikon, mata menyala/mati, share memunculkan ripple, trophy bergoyang.
+  </p>
+
+  <div class="wrap">
+    <!-- ============ A ============ -->
+    <div>
+      <p class="label">A — <b>micro-interaction</b></p>
+      <div class="phone" data-variant="a">
+        <header class="glass">
+          <div class="score">
+            <div class="orb">💎</div>
+            <div><b>8.4</b> <small>/ 10.0</small><br><small>1.2rb penilai</small></div>
+          </div>
+          <div class="actions">
+            <button class="pill gender" data-action="gender" aria-label="Filter gender">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
+            </button>
+            <button class="pill eye is-on" data-action="eye" aria-label="Sembunyikan reaksi">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            </button>
+            <button class="pill share" data-action="share" aria-label="Bagikan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+            </button>
+            <button class="pill trophy" data-action="trophy" aria-label="Leaderboard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0V4z"/><path d="M8 5H5v2a3 3 0 0 0 3 3M16 5h3v2a3 3 0 0 1-3 3"/><path d="M12 13v5M10 18h4M9 21h6"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="card">
+          <div class="photo"><img src="../public/foto.jpg" alt=""></div>
+          <div class="caption">Golden hour di rooftop, Jakarta</div>
+          <div class="nav"><button>⌃ Sebelumnya</button><button>Berikutnya ⌄</button></div>
+        </div>
+      </div>
+      <p class="note"><b>Hover:</b> naik 1px + icon membesar. <b>Tap:</b> mengecil seperti tombol fisik. Tidak ada animasi berulang.</p>
+    </div>
+
+    <!-- ============ B ============ -->
+    <div>
+      <p class="label">B — <b>color + glow</b> (rekomendasi)</p>
+      <div class="phone" data-variant="b">
+        <header class="glass">
+          <div class="score">
+            <div class="orb">💎</div>
+            <div><b>8.4</b> <small>/ 10.0</small><br><small>1.2rb penilai</small></div>
+          </div>
+          <div class="actions">
+            <button class="pill gender" data-action="gender" aria-label="Filter gender">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
+            </button>
+            <button class="pill eye is-on" data-action="eye" aria-label="Sembunyikan reaksi">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            </button>
+            <button class="pill share" data-action="share" aria-label="Bagikan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+            </button>
+            <button class="pill trophy" data-action="trophy" aria-label="Leaderboard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0V4z"/><path d="M8 5H5v2a3 3 0 0 0 3 3M16 5h3v2a3 3 0 0 1-3 3"/><path d="M12 13v5M10 18h4M9 21h6"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="card">
+          <div class="photo"><img src="../public/foto.jpg" alt=""></div>
+          <div class="caption">Golden hour di rooftop, Jakarta</div>
+          <div class="nav"><button>⌃ Sebelumnya</button><button>Berikutnya ⌄</button></div>
+        </div>
+      </div>
+      <p class="note"><b>Warna per aksi:</b> gender cyan, reaksi amber, share sky, trophy amber tua. Hover memunculkan border gradient + glow; state aktif memakai glow yang sama.</p>
+    </div>
+
+    <!-- ============ C ============ -->
+    <div>
+      <p class="label">C — <b>segmented bar</b></p>
+      <div class="phone" data-variant="c">
+        <header class="glass">
+          <div class="score">
+            <div class="orb">💎</div>
+            <div><b>8.4</b> <small>/ 10.0</small><br><small>1.2rb penilai</small></div>
+          </div>
+          <div class="actions">
+            <span class="seg-highlight"></span>
+            <button class="pill gender" data-action="gender" aria-label="Filter gender">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
+            </button>
+            <button class="pill eye" data-action="eye" aria-label="Tampilkan reaksi">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            </button>
+            <button class="pill share" data-action="share" aria-label="Bagikan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+            </button>
+            <button class="pill trophy" data-action="trophy" aria-label="Leaderboard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0V4z"/><path d="M8 5H5v2a3 3 0 0 0 3 3M16 5h3v2a3 3 0 0 1-3 3"/><path d="M12 13v5M10 18h4M9 21h6"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="card">
+          <div class="photo"><img src="../public/foto.jpg" alt=""></div>
+          <div class="caption">Golden hour di rooftop, Jakarta</div>
+          <div class="nav"><button>⌃ Sebelumnya</button><button>Berikutnya ⌄</button></div>
+        </div>
+      </div>
+      <p class="note"><b>Highlight meluncur</b> ke tombol yang ditekan. Terlihat paling rapi, tapi menyiratkan tombol aksi seperti pilihan tunggal.</p>
+    </div>
+
+    <!-- ============ D ============ -->
+    <div>
+      <p class="label">D — <b>ambient loop</b> (tidak disarankan)</p>
+      <div class="phone" data-variant="d">
+        <header class="glass">
+          <div class="score">
+            <div class="orb">💎</div>
+            <div><b>8.4</b> <small>/ 10.0</small><br><small>1.2rb penilai</small></div>
+          </div>
+          <div class="actions">
+            <button class="pill gender" data-action="gender" aria-label="Filter gender">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
+            </button>
+            <button class="pill eye is-on" data-action="eye" aria-label="Sembunyikan reaksi">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            </button>
+            <button class="pill share" data-action="share" aria-label="Bagikan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+            </button>
+            <button class="pill trophy" data-action="trophy" aria-label="Leaderboard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0V4z"/><path d="M8 5H5v2a3 3 0 0 0 3 3M16 5h3v2a3 3 0 0 1-3 3"/><path d="M12 13v5M10 18h4M9 21h6"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="card">
+          <div class="photo"><img src="../public/foto.jpg" alt=""></div>
+          <div class="caption">Golden hour di rooftop, Jakarta</div>
+          <div class="nav"><button>⌃ Sebelumnya</button><button>Berikutnya ⌄</button></div>
+        </div>
+      </div>
+      <p class="note"><b>Icon mengambang terus</b> dengan jeda berbeda, tombol aktif berdenyut. Terlihat hidup, tapi mengganggu saat menilai konten dan terus memakai animasi di WebView.</p>
+    </div>
+
+    <!-- ============ E ============ -->
+    <div>
+      <p class="label">E — <b>animated emoji</b> (Noto)</p>
+      <div class="phone" data-variant="e">
+        <header class="glass">
+          <div class="score">
+            <div class="orb">💎</div>
+            <div><b>8.4</b> <small>/ 10.0</small><br><small>1.2rb penilai</small></div>
+          </div>
+          <div class="actions">
+            <button class="pill gender" data-action="gender" aria-label="Filter: Cewek">
+              <img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f483/512.webp" alt="">
+            </button>
+            <button class="pill eye is-on" data-action="eye" aria-label="Sembunyikan reaksi">
+              <img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f440/512.webp" alt="">
+            </button>
+            <button class="pill share" data-action="share" aria-label="Bagikan">
+              <img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f48c/512.webp" alt="">
+            </button>
+            <button class="pill trophy" data-action="trophy" aria-label="Leaderboard">
+              <img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f3c6/512.webp" alt="">
+            </button>
+          </div>
+        </header>
+
+        <div class="card">
+          <div class="photo"><img src="../public/foto.jpg" alt=""></div>
+          <div class="caption">Golden hour di rooftop, Jakarta</div>
+          <div class="nav"><button>⌃ Sebelumnya</button><button>Berikutnya ⌄</button></div>
+        </div>
+      </div>
+      <p class="note"><b>Emoji Noto animasi</b> sebagai icon: 💃 cewek, 💪 cowok, 🌍 semua, 👀/🙈 reaksi, 💌 share, 🏆 leaderboard. Animasi berjalan sendiri seperti emoji premium Telegram; klik gender/mata untuk ganti emoji.</p>
+    </div>
+  </div>
+
+  <p class="hint">
+    Catatan implementasi: animasi hanya memakai <b>transform</b>, <b>opacity</b>, dan <b>box-shadow</b> supaya ringan di WebView Telegram.
+    Semua varian mematikan animasi saat <b>prefers-reduced-motion</b> aktif, dan tetap punya <b>aria-label</b> untuk screen reader.
+  </p>
+</div>
+
+<script>
+  var GENDERS = [
+    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>', label: 'Cewek' },
+    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10" cy="14" r="5"/><path d="M13.5 10.5L20 4M15 4h5v5"/></svg>', label: 'Cowok' },
+    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/></svg>', label: 'Semua' }
+  ];
+  var EMOJI = 'https://fonts.gstatic.com/s/e/notoemoji/latest/';
+  var GENDER_SRCS = [EMOJI + '1f483/512.webp', EMOJI + '1f4aa/512.webp', EMOJI + '1f30d/512.webp'];
+  var EYE_SRCS = [EMOJI + '1f440/512.webp', EMOJI + '1f648/512.webp'];
+  var EYE_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
+  var EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.2A9.9 9.9 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.3 3.9"/><path d="M6.4 7.6A17 17 0 0 0 2 12s3.5 6 10 6a9.7 9.7 0 0 0 4.2-.9"/></svg>';
+
+  document.querySelectorAll('.phone').forEach(function (phone) {
+    var genderIndex = 0;
+    var genderBtn = phone.querySelector('[data-action="gender"]');
+    var eyeBtn = phone.querySelector('[data-action="eye"]');
+    var highlight = phone.querySelector('.seg-highlight');
+
+    function moveHighlight(btn) {
+      if (!highlight || !btn) return;
+      highlight.style.width = btn.offsetWidth + 'px';
+      highlight.style.transform = 'translateX(' + (btn.offsetLeft - 3) + 'px)';
+    }
+
+    phone.querySelectorAll('.pill').forEach(function (btn) {
+      btn.addEventListener('click', function (event) {
+        btn.classList.remove('pop');
+        void btn.offsetWidth;
+        btn.classList.add('pop');
+        setTimeout(function () { btn.classList.remove('pop'); }, 340);
+
+        if (btn.dataset.action === 'gender') {
+          genderIndex = (genderIndex + 1) % GENDERS.length;
+          if (phone.dataset.variant === 'e') {
+            btn.querySelector('img').src = GENDER_SRCS[genderIndex];
+          } else {
+            btn.innerHTML = GENDERS[genderIndex].icon;
+          }
+          btn.setAttribute('aria-label', 'Filter: ' + GENDERS[genderIndex].label);
+        }
+
+        if (btn.dataset.action === 'eye') {
+          var on = btn.classList.toggle('is-on');
+          if (phone.dataset.variant === 'e') {
+            btn.querySelector('img').src = on ? EYE_SRCS[0] : EYE_SRCS[1];
+          } else {
+            btn.innerHTML = on ? EYE_ON : EYE_OFF;
+          }
+          btn.setAttribute('aria-label', on ? 'Sembunyikan reaksi' : 'Tampilkan reaksi');
+        }
+
+        if (btn.dataset.action === 'share') {
+          var rect = btn.getBoundingClientRect();
+          var dot = document.createElement('span');
+          dot.className = 'ripple';
+          dot.style.left = (event.clientX - rect.left) + 'px';
+          dot.style.top = (event.clientY - rect.top) + 'px';
+          btn.appendChild(dot);
+          setTimeout(function () { dot.remove(); }, 600);
+        }
+
+        if (highlight) {
+          phone.querySelectorAll('.pill').forEach(function (other) {
+            other.classList.toggle('is-active-icon', other === btn);
+          });
+          moveHighlight(btn);
+        }
+      });
+    });
+
+    if (highlight) moveHighlight(genderBtn);
+  });
+</script>
+</body>
+</html>

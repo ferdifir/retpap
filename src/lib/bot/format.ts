@@ -37,7 +37,7 @@ export function digestNotificationBody(counts: {
 }): string {
   const parts: string[] = [];
   if (counts.reactions > 0) parts.push(counts.reactions + " reaksi baru");
-  if (counts.ratings > 0) parts.push(counts.ratings + " nilai baru");
+  if (counts.ratings > 0) parts.push(counts.ratings + " rating baru");
   if (counts.comments > 0) parts.push(counts.comments + " komentar baru");
 
   return "📣 Fotomu dapat " + parts.join(", ") + " dalam 15 menit terakhir.";

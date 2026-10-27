@@ -65,6 +65,27 @@ export interface TelegramBackButton {
   offClick: (callback: () => void) => void;
 }
 
+/**
+ * Per-user cloud storage (Bot API 6.9+). Keys are 1-128 chars of A-Z a-z 0-9 _ -
+ * and values are at most 4096 chars. Unlike DeviceStorage it follows the user
+ * across devices.
+ */
+export interface TelegramCloudStorage {
+  getItem: (
+    key: string,
+    callback: (error: string | null, value: string | null) => void,
+  ) => void;
+  setItem: (
+    key: string,
+    value: string,
+    callback?: (error: string | null, stored?: boolean) => void,
+  ) => void;
+  removeItem: (
+    key: string,
+    callback?: (error: string | null, removed?: boolean) => void,
+  ) => void;
+}
+
 export interface TelegramWebApp {
   /** Raw query string. Empty when the page runs outside Telegram. */
   initData: string;
@@ -93,6 +114,7 @@ export interface TelegramWebApp {
   enableVerticalSwipes?: () => void;
   HapticFeedback?: TelegramHapticFeedback;
   BackButton?: TelegramBackButton;
+  CloudStorage?: TelegramCloudStorage;
 }
 
 declare global {

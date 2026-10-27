@@ -1,30 +1,31 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
+import { cloudGet, cloudSet } from "@/lib/cloud-storage";
 import { isReactionEmoji } from "./catalog";
 
-const STORAGE_KEY = "retpap:reactions:recent:v1";
+/** CloudStorage keys are limited to A-Z a-z 0-9 _ -, so no colons. */
+const KEY = "retpap_recent_emojis";
 /** One full grid row; enough to surface a habit without pushing the defaults out. */
 const CAP = 8;
 /** Only the head of the list reaches the quick row. */
 export const QUICK_RECENT_LIMIT = 3;
 
-function safeStorage(): Storage | null {
-  try {
-    return window.localStorage;
-  } catch {
-    // Telegram WebView in private mode can throw on access.
-    return null;
-  }
+const EMPTY: string[] = [];
+/** null until the cloud value has been read. */
+let cached: string[] | null = null;
+let hydrating = false;
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  for (const listener of listeners) listener();
 }
 
-/** Most recent first, catalog-only, SSR-safe (returns an empty list on the server). */
-export function readRecentEmojis(): string[] {
-  if (typeof window === "undefined") return [];
+/** Catalog-only, deduped, capped; a corrupt value degrades to an empty list. */
+function parse(raw: string | null): string[] {
+  if (!raw) return [];
 
   try {
-    const raw = safeStorage()?.getItem(STORAGE_KEY);
-    if (!raw) return [];
-
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
 
@@ -42,15 +43,45 @@ export function readRecentEmojis(): string[] {
   }
 }
 
+function hydrate(): void {
+  if (cached !== null || hydrating) return;
+  hydrating = true;
+
+  void cloudGet(KEY).then((value) => {
+    hydrating = false;
+    // A pick that happened while reading wins over the stored list.
+    if (cached !== null) return;
+    cached = parse(value);
+    emit();
+  });
+}
+
+/** Most recent first, catalog-only, SSR-safe (empty until the cloud answers). */
+export function readRecentEmojis(): string[] {
+  return cached ?? EMPTY;
+}
+
 /** Move-to-front, dedupe, cap. Best effort: storage failures never block a reaction. */
 export function pushRecentEmoji(emoji: string): string[] {
   const next = [emoji, ...readRecentEmojis().filter((entry) => entry !== emoji)].slice(0, CAP);
-
-  try {
-    safeStorage()?.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    // Quota or disabled storage: recents are a nicety, not state.
-  }
-
+  cached = next;
+  emit();
+  void cloudSet(KEY, JSON.stringify(next));
   return next;
+}
+
+export function subscribeRecentEmojis(listener: () => void): () => void {
+  listeners.add(listener);
+  hydrate();
+
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+const serverSnapshot = () => EMPTY;
+
+/** Shared recents, hydrated once per page load. */
+export function useRecentEmojis(): string[] {
+  return useSyncExternalStore(subscribeRecentEmojis, readRecentEmojis, serverSnapshot);
 }

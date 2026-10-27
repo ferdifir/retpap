@@ -42,3 +42,7 @@ next-env.d.ts
 
 # stray screenshots
 Screenshot*.png
+
+# scheduled upload runtime data
+/inbox
+scripts/.upload-state.json

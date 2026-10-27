@@ -65,5 +65,5 @@ export function getRatingTone(score: number): RatingTone {
 }
 
 export function formatVotes(votes: number): string {
-  return `${votes.toLocaleString("id-ID")} penilaian`;
+  return `${votes.toLocaleString("id-ID")} rating`;
 }

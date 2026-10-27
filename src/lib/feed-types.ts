@@ -36,6 +36,10 @@ export type FeedPhoto = {
   durationSeconds: number | null;
   imageWidth: number;
   imageHeight: number;
+  /** Marked 18+; the feed keeps it blurred until revealed. */
+  isNsfw: boolean;
+  /** Content gender; null for uploads made before the question existed. */
+  gender: "female" | "male" | null;
   rating: { avg: number; votes: number; mine: number | null };
   spots: FeedSpot[];
 };
@@ -53,4 +57,18 @@ export type LeaderboardEntry = {
   /** Rounded to one decimal for display. */
   avg: number;
   votes: number;
+};
+
+/** Window a leaderboard covers: day, week, month, or everything. */
+export type LeaderboardPeriod = "day" | "week" | "month" | "all";
+
+export type LeaderboardResult = {
+  period: LeaderboardPeriod;
+  /** Ratings needed before a media may appear on this leaderboard. */
+  minVotes: number;
+  /** ISO start of the window; null for all-time. */
+  start: string | null;
+  /** ISO end of the window; null for all-time. */
+  end: string | null;
+  entries: LeaderboardEntry[];
 };

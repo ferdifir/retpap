@@ -1,7 +1,9 @@
+import { readFile } from "node:fs/promises";
 import {
   deactivatePhoto,
   markBotStarted,
   markChannelPost,
+  markPhotoNsfw,
   setNotifyByTelegram,
   toggleNotifyByTelegram,
   upsertUser,
@@ -11,10 +13,12 @@ import {
   createPhoto,
   getUploadSession,
   saveUploadSession,
+  type ContentGender,
   type MediaType,
 } from "@/db/upload";
 import { HOW_TO_NOTE, HOW_TO_TIPS } from "@/lib/how-to";
-import { shareUrlFor, uploadUrl } from "@/lib/share";
+import { recordEvent } from "@/lib/analytics/record";
+import { shareUrlFor, statsUrl, uploadUrl } from "@/lib/share";
 import type { TelegramUser } from "@/types/telegram";
 import {
   answerCallbackQuery,
@@ -39,12 +43,13 @@ import {
   saveVideo,
   videoUrl,
 } from "./media";
+import { overlayNsfwBadge } from "./nsfw-badge";
 import type { BotMessage, BotUpdate, InlineKeyboardMarkup } from "./types";
 import { extractPoster, extractTeaser, matchAspect, normalisePoster, type Poster } from "./video";
 
 const MAX_CAPTION_LENGTH = 500;
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
-const MAX_VIDEO_SECONDS = 30;
+const MAX_VIDEO_SECONDS = 60;
 /** Bot API refuses to download files larger than this via getFile. */
 const MAX_VIDEO_BYTES = 20 * 1024 * 1024;
 const VIDEO_MIME_TYPES = new Set(["video/mp4", "video/webm"]);
@@ -85,7 +90,8 @@ const CHANNEL_CTA = "Rate foto ini, atau upload punyamu 👇";
 
 /** Channel caption: the upload, then one line pointing at the app. */
 function channelCaption(caption: string): string {
-  return escapeHtml(caption) + "\n\n" + CHANNEL_CTA;
+  // Bold + quotes separate the upload's caption from the call to action.
+  return "<b>“" + escapeHtml(caption) + "”</b>\n\n" + CHANNEL_CTA;
 }
 
 /**
@@ -104,18 +110,25 @@ async function requireChannel(chatId: number, telegramId: number): Promise<boole
 type ChannelMedia = {
   mediaType: MediaType;
   slug: string;
-  fileId: string;
-  /** Original bytes, used to build the blurred photo teaser. */
-  bytes: Buffer;
+  /** Absent when re-posting from disk after an owner 18+ action. */
+  fileId?: string;
+  /** Original bytes, used to build the blurred teaser. */
+  bytes?: Buffer;
   /** Video still frame; also the source of the blurred cover. */
   poster: Poster | null;
 };
 
 /**
  * Publishes a blurred teaser of the upload to the channel; a failure must not
- * undo the upload. If the blur fails, the original cover is posted instead.
+ * undo the upload. For 18+ the blur is stronger and the badge is burned in;
+ * if that fails, the original is only sent behind Telegram's spoiler.
  */
-async function postToChannel(photoId: number, media: ChannelMedia, caption: string): Promise<void> {
+async function postToChannel(
+  photoId: number,
+  media: ChannelMedia,
+  caption: string,
+  isNsfw: boolean,
+): Promise<void> {
   if (!channelConfigured()) return;
 
   const options = {
@@ -123,7 +136,7 @@ async function postToChannel(photoId: number, media: ChannelMedia, caption: stri
     keyboard: {
       inline_keyboard: [
         [
-          { text: "Beri nilai", url: shareUrlFor(media.slug) },
+          { text: "Kasih rating", url: shareUrlFor(media.slug) },
           { text: "Upload", url: uploadUrl() },
         ],
       ],
@@ -141,7 +154,7 @@ async function postToChannel(photoId: number, media: ChannelMedia, caption: stri
 
       if (videoPath) {
         try {
-          teaser = await extractTeaser(videoPath);
+          teaser = await extractTeaser(videoPath, { nsfw: isNsfw });
         } catch (error) {
           console.error("[bot] channel teaser failed", error);
         }
@@ -154,32 +167,59 @@ async function postToChannel(photoId: number, media: ChannelMedia, caption: stri
 
         if (media.poster) {
           try {
-            thumbnail = await blurredThumbnail(media.poster.bytes);
+            thumbnail = await blurredThumbnail(media.poster.bytes, { nsfw: isNsfw });
+            if (isNsfw) thumbnail = await overlayNsfwBadge(thumbnail);
           } catch (error) {
             console.error("[bot] channel thumbnail blur failed", error);
+            thumbnail = null;
           }
         }
 
         // Without a blurred cover, fall back to Telegram's spoiler overlay so
         // the channel still does not reveal the frame.
-        message = await sendVideo(channelId(), media.fileId, {
-          ...options,
-          thumbnail: thumbnail ?? undefined,
-          spoiler: thumbnail === null,
-        });
+        if (media.fileId) {
+          message = await sendVideo(channelId(), media.fileId, {
+            ...options,
+            thumbnail: thumbnail ?? undefined,
+            spoiler: thumbnail === null,
+          });
+        } else if (media.bytes) {
+          message = await sendVideoFile(channelId(), media.bytes, {
+            ...options,
+            spoiler: true,
+          });
+        } else {
+          throw new Error("no video source for channel post");
+        }
       }
     } else {
       let blurred: Buffer | null = null;
 
       try {
-        blurred = await blurPhoto(media.bytes);
+        if (media.bytes) {
+          blurred = await blurPhoto(media.bytes, { nsfw: isNsfw });
+          if (isNsfw) blurred = await overlayNsfwBadge(blurred);
+        }
       } catch (error) {
         console.error("[bot] channel blur failed", error);
+        blurred = null;
       }
 
-      message = blurred
-        ? await sendPhotoFile(channelId(), blurred, options)
-        : await sendPhoto(channelId(), media.fileId, options);
+      if (blurred) {
+        message = await sendPhotoFile(channelId(), blurred, options);
+      } else if (media.fileId) {
+        message = await sendPhoto(channelId(), media.fileId, {
+          ...options,
+          spoiler: isNsfw,
+        });
+      } else if (media.bytes) {
+        message = await sendPhotoFile(channelId(), media.bytes, {
+          ...options,
+          spoiler: true,
+        });
+      } else {
+        throw new Error("no photo source for channel post");
+      }
     }
 
     await markChannelPost(photoId, message.message_id);
@@ -188,19 +228,23 @@ async function postToChannel(photoId: number, media: ChannelMedia, caption: stri
   }
 }
 
-/** Sends the fresh upload to the owner with a manual delete button. */
+/** Sends the fresh upload to the owner with delete and 18+ actions. */
 async function notifyOwner(
   photoId: number,
   fileId: string,
   mediaType: MediaType,
   caption: string,
+  isNsfw: boolean,
 ): Promise<void> {
   const ownerId = ownerTelegramId();
   if (ownerId === null) return;
 
+  const buttons = [{ text: "Hapus", callback_data: "del:" + photoId }];
+  if (!isNsfw) buttons.push({ text: "18+", callback_data: "nsfw:" + photoId });
+
   const options = {
     caption: escapeHtml(caption),
-    keyboard: { inline_keyboard: [[{ text: "Hapus", callback_data: "del:" + photoId }]] },
+    keyboard: { inline_keyboard: [buttons] },
   };
 
   try {
@@ -212,6 +256,66 @@ async function notifyOwner(
   } catch (error) {
     console.error("[bot] owner notification failed", error);
   }
+}
+
+/**
+ * Owner action: mark an upload 18+, then rebuild its channel post with the
+ * stronger blur and badge. The DB flag is written first so a failed re-post
+ * never leaves the feed showing unblurred content.
+ */
+async function markNsfwAndRepost(
+  photoId: number,
+  chatId: number,
+  messageId: number,
+): Promise<void> {
+  const photo = await markPhotoNsfw(photoId);
+
+  if (!photo) {
+    await editMessageCaption(chatId, messageId, "Konten tidak ditemukan.");
+    return;
+  }
+
+  if (!photo.isActive) {
+    await editMessageCaption(chatId, messageId, "Konten sudah tidak aktif.");
+    return;
+  }
+
+  if (photo.wasNsfw) {
+    await editMessageCaption(chatId, messageId, escapeHtml(photo.caption) + "\n\nSudah ditandai 18+.");
+    return;
+  }
+
+  if (photo.channelMessageId !== null && channelConfigured()) {
+    await deleteMessage(channelId(), photo.channelMessageId).catch(() => undefined);
+  }
+
+  const file = mediaPath(photo.slug, photo.mediaType === "video" ? "mp4" : "jpg");
+  const bytes = file ? await readFile(file).catch(() => null) : null;
+
+  if (!bytes) {
+    await editMessageCaption(
+      chatId,
+      messageId,
+      escapeHtml(photo.caption) +
+        "\n\n✅ Ditandai 18+, tapi file tidak ditemukan untuk repost channel.",
+      { inline_keyboard: [[{ text: "Hapus", callback_data: "del:" + photoId }]] },
+    ).catch(() => undefined);
+    return;
+  }
+
+  await postToChannel(
+    photoId,
+    { mediaType: photo.mediaType, slug: photo.slug, bytes, poster: null },
+    photo.caption,
+    true,
+  );
+
+  await editMessageCaption(
+    chatId,
+    messageId,
+    escapeHtml(photo.caption) + "\n\n✅ Ditandai 18+.",
+    { inline_keyboard: [[{ text: "Hapus", callback_data: "del:" + photoId }]] },
+  ).catch(() => undefined);
 }
 
 /** Manual curation: hide the photo, drop the channel post, tell the uploader. */
@@ -253,9 +357,9 @@ const HOWTO_TEXT = [
 ].join("\n");
 
 const ASK_MEDIA_TEXT = [
-  "<b>Langkah 1/2</b>",
+  "<b>Langkah 1/4</b>",
   "",
-  "Kirim foto atau video sekarang. Video maksimal 30 detik dan 20 MB.",
+  "Kirim foto atau video sekarang. Video maksimal 1 menit dan 20 MB.",
   "",
   "Setelah itu saya minta caption.",
   "",
@@ -263,20 +367,60 @@ const ASK_MEDIA_TEXT = [
 ].join("\n");
 
 const ASK_CAPTION_TEXT = [
-  "<b>Langkah 2/2</b>",
+  "<b>Langkah 2/4</b>",
   "",
   "Sekarang kirim caption untuk foto atau video ini (teks biasa, maksimal " + MAX_CAPTION_LENGTH + " karakter).",
   "",
   "Ketik /batal kalau berubah pikiran.",
 ].join("\n");
 
-function confirmText(caption: string): string {
+const ASK_GENDER_TEXT = [
+  "<b>Langkah 3/4</b>",
+  "",
+  "Konten ini dari cewek atau cowok?",
+  "",
+  "Jawaban ini dipakai untuk filter feed, jadi penonton bisa memilih mau lihat yang mana.",
+].join("\n");
+
+const ASK_NSFW_TEXT = [
+  "<b>Langkah 4/4</b>",
+  "",
+  "Konten ini mengandung 18+?",
+  "",
+  "Kalau ya, konten diberi blur lebih kuat dan badge 18+ saat dikirim ke channel.",
+].join("\n");
+
+function genderQuestionKeyboard(): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [
+        { text: "Cewek", callback_data: "genderans:female" },
+        { text: "Cowok", callback_data: "genderans:male" },
+      ],
+    ],
+  };
+}
+
+function nsfwQuestionKeyboard(): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [
+        { text: "Ya, 18+", callback_data: "nsfwans:yes" },
+        { text: "Bukan", callback_data: "nsfwans:no" },
+      ],
+    ],
+  };
+}
+
+function confirmText(caption: string, gender: ContentGender, isNsfw: boolean): string {
   return [
     "<b>Konfirmasi upload</b>",
     "",
     "Caption: <i>" + escapeHtml(caption) + "</i>",
+    "Konten: <b>" + (gender === "female" ? "Cewek" : "Cowok") + "</b>",
+    "18+: <b>" + (isNsfw ? "Ya" : "Tidak") + "</b>",
     "",
-    "Upload sekarang? Konten akan muncul di feed dan bisa dinilai semua orang.",
+    "Upload sekarang? Konten akan muncul di feed dan bisa di-rating semua orang.",
   ].join("\n");
 }
 
@@ -296,6 +440,13 @@ async function startUpload(chatId: number, telegramId: number): Promise<void> {
     imageHeight: null,
     durationSeconds: null,
     caption: null,
+    isNsfw: null,
+    gender: null,
+  });
+  void recordEvent({
+    name: "upload_step",
+    telegramId,
+    meta: { step: "photo", media: "photo" },
   });
   await sendMessage(chatId, ASK_MEDIA_TEXT);
 }
@@ -305,13 +456,48 @@ async function cancelUpload(chatId: number, telegramId: number): Promise<void> {
   await sendMessage(chatId, "Upload dibatalkan.");
 }
 
+async function askGender(
+  chatId: number,
+  fileId: string,
+  mediaType: MediaType,
+): Promise<void> {
+  const options = { caption: ASK_GENDER_TEXT, keyboard: genderQuestionKeyboard() };
+
+  if (mediaType === "video") {
+    await sendVideo(chatId, fileId, options);
+    return;
+  }
+
+  await sendPhoto(chatId, fileId, options);
+}
+
+async function askNsfw(
+  chatId: number,
+  fileId: string,
+  mediaType: MediaType,
+): Promise<void> {
+  const options = { caption: ASK_NSFW_TEXT, keyboard: nsfwQuestionKeyboard() };
+
+  if (mediaType === "video") {
+    await sendVideo(chatId, fileId, options);
+    return;
+  }
+
+  await sendPhoto(chatId, fileId, options);
+}
+
 async function showConfirmation(
   chatId: number,
   fileId: string,
   mediaType: MediaType,
   caption: string,
+  gender: ContentGender,
+  isNsfw: boolean,
 ): Promise<void> {
-  const options = { caption: confirmText(caption), keyboard: confirmKeyboard() };
+  const options = {
+    caption: confirmText(caption, gender, isNsfw),
+    keyboard: confirmKeyboard(),
+  };
 
   if (mediaType === "video") {
     await sendVideo(chatId, fileId, options);
@@ -354,10 +540,18 @@ async function handlePhoto(message: BotMessage, user: TelegramUser): Promise<voi
     imageHeight: largest.height,
     durationSeconds: null,
     caption: caption || null,
+    isNsfw: null,
+    gender: null,
+  });
+
+  void recordEvent({
+    name: "upload_step",
+    telegramId: user.id,
+    meta: { step: caption ? "confirm" : "caption", media: "photo" },
   });
 
   if (caption) {
-    await showConfirmation(message.chat.id, largest.file_id, "photo", caption);
+    await askGender(message.chat.id, largest.file_id, "photo");
     return;
   }
 
@@ -418,10 +612,18 @@ async function handleVideo(message: BotMessage, user: TelegramUser): Promise<voi
     imageHeight: video.height,
     durationSeconds: video.duration,
     caption: caption || null,
+    isNsfw: null,
+    gender: null,
+  });
+
+  void recordEvent({
+    name: "upload_step",
+    telegramId: user.id,
+    meta: { step: caption ? "confirm" : "caption", media: "video" },
   });
 
   if (caption) {
-    await showConfirmation(message.chat.id, video.file_id, "video", caption);
+    await askGender(message.chat.id, video.file_id, "video");
     return;
   }
 
@@ -440,8 +642,19 @@ async function handleCaption(chatId: number, user: TelegramUser, text: string): 
     return;
   }
 
-  await saveUploadSession({ ...session, step: "confirm", caption: text });
-  await showConfirmation(chatId, session.fileId, session.mediaType, text);
+  await saveUploadSession({
+    ...session,
+    step: "confirm",
+    caption: text,
+    isNsfw: null,
+    gender: null,
+  });
+  void recordEvent({
+    name: "upload_step",
+    telegramId: user.id,
+    meta: { step: "confirm", media: session.mediaType },
+  });
+  await askGender(chatId, session.fileId, session.mediaType);
 }
 
 async function handleText(message: BotMessage, user: TelegramUser): Promise<void> {
@@ -478,12 +691,24 @@ async function handleText(message: BotMessage, user: TelegramUser): Promise<void
     return;
   }
 
+  if (command === "stats") {
+    if (user.id !== ownerTelegramId()) {
+      await sendMessage(chatId, "Command ini hanya untuk owner.");
+      return;
+    }
+
+    await sendMessage(chatId, "Analytics RetPAP 👇", {
+      keyboard: { inline_keyboard: [[{ text: "Buka Stats", url: statsUrl() }]] },
+    });
+    return;
+  }
+
   if (command === "notif") {
     const enabled = await toggleNotifyByTelegram(user.id);
     await sendMessage(
       chatId,
       enabled
-        ? "Notifikasi dinyalakan. Kamu akan dapat kabar saat kontenmu dinilai atau dikomentari."
+        ? "Notifikasi dinyalakan. Kamu akan dapat kabar saat kontenmu di-rating atau dikomentari."
         : "Notifikasi dimatikan. Ketik /notif lagi untuk menyalakan.",
     );
     return;
@@ -550,6 +775,16 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
     return;
   }
 
+  if (session.gender === null) {
+    await askGender(chatId, session.fileId, session.mediaType);
+    return;
+  }
+
+  if (session.isNsfw === null) {
+    await askNsfw(chatId, session.fileId, session.mediaType);
+    return;
+  }
+
   try {
     const file = await getFile(session.fileId);
     if (!file.file_path) throw new Error("getFile returned no file_path");
@@ -611,17 +846,37 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
       durationSeconds: session.durationSeconds,
       posterUrl,
       userId: owner.id,
+      isNsfw: session.isNsfw,
+      gender: session.gender,
     });
 
     await clearUploadSession(user.id);
+
+    void recordEvent({
+      name: "upload_published",
+      telegramId: user.id,
+      userId: owner.id,
+      photoId,
+      meta: {
+        media: session.mediaType,
+        gender: session.gender,
+        nsfw: session.isNsfw,
+      },
+    });
 
     const label = session.mediaType === "video" ? "Video" : "Foto";
     await editMessageCaption(
       chatId,
       messageId,
-      "✅ <b>" + label + " kamu sudah masuk feed.</b>\n\nCaption: <i>" + escapeHtml(session.caption) + "</i>",
+      "✅ <b>" +
+        label +
+        " kamu sudah masuk feed.</b>\n\n" +
+        (session.isNsfw ? "18+: <b>Ya</b>\n" : "") +
+        "Caption: <i>" +
+        escapeHtml(session.caption) +
+        "</i>",
     );
-    await sendMessage(chatId, "Buka app buat lihat dan menilai konten lain.", {
+    await sendMessage(chatId, "Buka app buat kasih rating konten lain.", {
       keyboard: openAppKeyboard(slug),
     });
 
@@ -630,8 +885,9 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
       photoId,
       { mediaType: session.mediaType, slug, fileId: session.fileId, bytes, poster },
       session.caption,
+      session.isNsfw,
     );
-    await notifyOwner(photoId, session.fileId, session.mediaType, session.caption);
+    await notifyOwner(photoId, session.fileId, session.mediaType, session.caption, session.isNsfw);
   } catch (error) {
     console.error("[bot] publish failed", error);
     await editMessageCaption(chatId, messageId, "Gagal menyimpan konten. Kirim ulang dengan /upload.");
@@ -660,10 +916,85 @@ async function handleCallback(update: BotUpdate): Promise<void> {
     return;
   }
 
+  // Owner marks a published upload as 18+ and the channel post is rebuilt.
+  if (query.data?.startsWith("nsfw:")) {
+    const photoId = Number(query.data.slice(5));
+    if (query.from.id !== ownerTelegramId() || !Number.isInteger(photoId)) {
+      await answerCallbackQuery(query.id, "Bukan untuk kamu").catch(() => undefined);
+      return;
+    }
+
+    await answerCallbackQuery(query.id).catch(() => undefined);
+    if (chatId !== undefined && messageId !== undefined) {
+      await markNsfwAndRepost(photoId, chatId, messageId);
+    }
+    return;
+  }
+
   // Stop the client-side spinner before doing any slow work.
   await answerCallbackQuery(query.id).catch(() => undefined);
 
   if (chatId === undefined || messageId === undefined) return;
+
+  if (query.data === "genderans:female" || query.data === "genderans:male") {
+    const session = await getUploadSession(query.from.id);
+
+    if (!session || session.step !== "confirm" || !session.fileId || !session.caption) {
+      await editMessageCaption(chatId, messageId, "Sesi upload sudah tidak ada. Kirim /upload untuk mulai lagi.");
+      return;
+    }
+
+    const gender: ContentGender = query.data === "genderans:female" ? "female" : "male";
+    await saveUploadSession({ ...session, gender });
+    void recordEvent({
+      name: "upload_step",
+      telegramId: query.from.id,
+      meta: { step: "confirm", question: "gender", gender },
+    });
+    await editMessageCaption(
+      chatId,
+      messageId,
+      "Konten: <b>" + (gender === "female" ? "Cewek" : "Cowok") + "</b>",
+    ).catch(() => undefined);
+    await askNsfw(chatId, session.fileId, session.mediaType);
+    return;
+  }
+
+  if (query.data === "nsfwans:yes" || query.data === "nsfwans:no") {
+    const session = await getUploadSession(query.from.id);
+
+    if (!session || session.step !== "confirm" || !session.fileId || !session.caption) {
+      await editMessageCaption(chatId, messageId, "Sesi upload sudah tidak ada. Kirim /upload untuk mulai lagi.");
+      return;
+    }
+
+    if (session.gender === null) {
+      await askGender(chatId, session.fileId, session.mediaType);
+      return;
+    }
+
+    const isNsfw = query.data === "nsfwans:yes";
+    await saveUploadSession({ ...session, isNsfw });
+    void recordEvent({
+      name: "upload_step",
+      telegramId: query.from.id,
+      meta: { step: "confirm", question: "nsfw", nsfw: isNsfw },
+    });
+    await editMessageCaption(
+      chatId,
+      messageId,
+      "18+: <b>" + (isNsfw ? "Ya" : "Tidak") + "</b>",
+    ).catch(() => undefined);
+    await showConfirmation(
+      chatId,
+      session.fileId,
+      session.mediaType,
+      session.caption,
+      session.gender,
+      isNsfw,
+    );
+    return;
+  }
 
   if (query.data === "cancel") {
     await clearUploadSession(query.from.id);

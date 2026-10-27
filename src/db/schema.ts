@@ -6,6 +6,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   real,
@@ -15,8 +16,9 @@ import {
 } from "drizzle-orm/pg-core";
 
 // Postgres 12 rejects an explicit DEFAULT for GENERATED ALWAYS, which is how
-  // Drizzle writes inserts. BY DEFAULT keeps the same behaviour for us.
-  const identity = () => bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity();
+// Drizzle writes inserts. BY DEFAULT keeps the same behaviour for us.
+const identity = () =>
+  bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity();
 
 export const users = pgTable("users", {
   id: identity(),
@@ -32,9 +34,20 @@ export const users = pgTable("users", {
   notify: boolean("notify").notNull().default(true),
   /** Set the first time the user talks to the bot; gates the Mini App. */
   startedAt: timestamp("started_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
-});
+  /** Feed filter chosen once; null until the user picks. */
+  genderPreference: text("gender_preference"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+}, (table) => [
+  check(
+    "users_gender_preference_valid",
+    sql`${table.genderPreference} is null or ${table.genderPreference} in ('female', 'male', 'all')`,
+  ),
+]);
 
 /**
  * One in-flight upload per Telegram user. The bot asks for a photo, then a
@@ -56,15 +69,33 @@ export const uploadSessions = pgTable(
     imageHeight: integer("image_height"),
     durationSeconds: integer("duration_seconds"),
     caption: text("caption"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Uploader's answer to the 18+ question; null until answered. */
+    isNsfw: boolean("is_nsfw"),
+    /** Uploader's answer to the female/male question; null until answered. */
+    gender: text("gender"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
-    check("upload_sessions_step_valid", sql`${table.step} in ('photo', 'caption', 'confirm')`),
-    check("upload_sessions_media_type_valid", sql`${table.mediaType} in ('photo', 'video')`),
+    check(
+      "upload_sessions_step_valid",
+      sql`${table.step} in ('photo', 'caption', 'confirm')`,
+    ),
+    check(
+      "upload_sessions_media_type_valid",
+      sql`${table.mediaType} in ('photo', 'video')`,
+    ),
     check(
       "upload_sessions_duration_range",
-      sql`${table.durationSeconds} is null or ${table.durationSeconds} between 1 and 30`,
+      sql`${table.durationSeconds} is null or ${table.durationSeconds} between 1 and 60`,
+    ),
+    check(
+      "upload_sessions_gender_valid",
+      sql`${table.gender} is null or ${table.gender} in ('female', 'male')`,
     ),
   ],
 );
@@ -84,6 +115,10 @@ export const photos = pgTable(
     durationSeconds: integer("duration_seconds"),
     /** Still frame shown before a video plays; null for photos. */
     posterUrl: text("poster_url"),
+    /** Marked 18+ by the uploader or the owner. */
+    isNsfw: boolean("is_nsfw").notNull().default(false),
+    /** Content gender, answered at upload; null for older rows. */
+    gender: text("gender"),
     isActive: boolean("is_active").notNull().default(true),
     /** Uploader; null for photos published before ownership existed. */
     userId: bigint("user_id", { mode: "number" }).references(() => users.id, {
@@ -93,15 +128,24 @@ export const photos = pgTable(
     lastDigestAt: timestamp("last_digest_at", { withTimezone: true }),
     /** Channel post for this photo, so a manual delete can remove it too. */
     channelMessageId: bigint("channel_message_id", { mode: "number" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     check("photos_width_positive", sql`${table.imageWidth} > 0`),
     check("photos_height_positive", sql`${table.imageHeight} > 0`),
-    check("photos_media_type_valid", sql`${table.mediaType} in ('photo', 'video')`),
+    check(
+      "photos_media_type_valid",
+      sql`${table.mediaType} in ('photo', 'video')`,
+    ),
     check(
       "photos_duration_range",
-      sql`${table.durationSeconds} is null or ${table.durationSeconds} between 1 and 30`,
+      sql`${table.durationSeconds} is null or ${table.durationSeconds} between 1 and 60`,
+    ),
+    check(
+      "photos_gender_valid",
+      sql`${table.gender} is null or ${table.gender} in ('female', 'male')`,
     ),
     index("photos_user_idx").on(table.userId),
   ],
@@ -117,7 +161,9 @@ export const spots = pgTable(
     /** 0..1 relative to the rendered image box, not the container. */
     x: real("x").notNull(),
     y: real("y").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     // Redundant for uniqueness, required as the target of the composite FK.
@@ -140,7 +186,9 @@ export const reactions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     emoji: text("emoji").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     // One reaction per user per photo, enforced by the database.
@@ -167,7 +215,9 @@ export const comments = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     index("comments_spot_idx").on(table.spotId, table.createdAt),
@@ -178,7 +228,10 @@ export const comments = pgTable(
       columns: [table.spotId, table.photoId],
       foreignColumns: [spots.id, spots.photoId],
     }).onDelete("cascade"),
-    check("comments_body_length", sql`char_length(${table.body}) between 1 and 500`),
+    check(
+      "comments_body_length",
+      sql`char_length(${table.body}) between 1 and 500`,
+    ),
   ],
 );
 
@@ -192,12 +245,53 @@ export const ratings = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     score: real("score").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.photoId, table.userId] }),
+    // Period leaderboards filter by when a rating was first written.
+    index("ratings_created_at_idx").on(table.createdAt, table.photoId),
     check("ratings_score_range", sql`${table.score} between 1 and 10`),
+  ],
+);
+
+/**
+ * One claimed recap per kind and period. The unique key is the idempotency
+ * guard: the cron runs every minute, so a period must only ever be sent once.
+ */
+export const leaderboardAnnouncements = pgTable(
+  "leaderboard_announcements",
+  {
+    id: identity(),
+    /** "daily" | "weekly" | "monthly" */
+    kind: text("kind").notNull(),
+    /** Start of the window, at 00:00 Asia/Jakarta, stored as timestamptz. */
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    /** Channel message id once Telegram accepted the message. */
+    messageId: bigint("message_id", { mode: "number" }),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
+    /** Set on success, and on a deliberate skip when nothing qualified. */
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("leaderboard_announcements_kind_period").on(
+      table.kind,
+      table.periodStart,
+    ),
+    check(
+      "leaderboard_announcements_kind_valid",
+      sql`${table.kind} in ('daily', 'weekly', 'monthly')`,
+    ),
   ],
 );
 
@@ -224,10 +318,52 @@ export const notifications = pgTable(
     attempts: integer("attempts").notNull().default(0),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     error: text("error"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     index("notifications_pending_idx").on(table.userId, table.sentAt),
-    check("notifications_kind_valid", sql`${table.kind} in ('comment', 'digest')`),
+    check(
+      "notifications_kind_valid",
+      sql`${table.kind} in ('comment', 'digest')`,
+    ),
+  ],
+);
+
+/**
+ * First-party analytics. Only for facts the rest of the schema cannot answer:
+ * app opens, impressions, gate funnel and bot upload steps. Reactions, ratings
+ * and comments stay in their own tables and are never duplicated here.
+ */
+export const events = pgTable(
+  "events",
+  {
+    id: identity(),
+    /** Validated in the app against `EventName`; no check so new events skip a migration. */
+    name: text("name").notNull(),
+    userId: bigint("user_id", { mode: "number" }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    photoId: bigint("photo_id", { mode: "number" }).references(() => photos.id, {
+      onDelete: "set null",
+    }),
+    /** Random id per app launch; unique impressions without a cookie. */
+    sessionId: text("session_id").notNull(),
+    /** Small, already-summarised attributes; never free text. */
+    meta: jsonb("meta")
+      .$type<Record<string, string | number | boolean | null>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("events_name_created_idx").on(table.name, table.createdAt),
+    index("events_created_idx").on(table.createdAt),
+    index("events_photo_name_idx").on(table.photoId, table.name),
+    index("events_user_created_idx").on(table.userId, table.createdAt),
+    index("events_session_idx").on(table.sessionId),
   ],
 );

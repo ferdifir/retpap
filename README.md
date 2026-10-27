@@ -24,7 +24,7 @@ Tidak ada form upload di dalam Mini App; foto dan video masuk lewat chat bot.
 /howto    → cara pakai aplikasi
 /upload   → bot minta foto atau video
 media     → bot minta caption
-caption   → preview + tombol Terbitkan / Batal
+caption   → pertanyaan cewek/cowok → pertanyaan 18+ (Ya / Bukan) → preview + tombol Upload / Batal
 ```
 
 `/batal` kapan saja untuk reset. Media yang dikirim beserta caption dalam satu pesan melewati
@@ -38,6 +38,25 @@ app supaya `rsync --delete` tidak menghapusnya), lalu disajikan lewat `GET /medi
 Video memakai `ffmpeg` untuk mengambil poster dan mendukung HTTP Range agar bisa di-seek. Untuk
 channel, video dibuatkan teaser 3 detik yang diblur dan tanpa audio, sehingga gerakannya
 membedakannya dari foto yang cover-nya juga diblur.
+
+### Filter gender
+
+Saat pertama membuka Mini App, user memilih feed **Cewek**, **Cowok**, atau **Semua**.
+Pilihan disimpan di `users.gender_preference` (bukan localStorage), jadi ikut di device lain,
+dan bisa diganti lewat pill di header. Feed difilter di SQL: pilihan cewek/cowok menampilkan
+konten dengan gender yang sama **plus** konten yang belum berlabel (`photos.gender is null`),
+supaya upload lama tidak hilang. Konten baru diberi label dari pertanyaan cewek/cowok saat
+upload; upload terjadwal memakai `UPLOAD_GENDER` (default `female`). Leaderboard tidak difilter.
+
+### Konten 18+
+
+Uploader menjawab pertanyaan 18+ sebelum konfirmasi. Jawaban disimpan di
+`photos.is_nsfw`. Konten 18+ yang dikirim ke channel memakai blur lebih kuat dan badge
+`18+` yang dibakar ke media (kanan atas); caption tidak diubah. Di feed, kartu 18+
+diblur sampai user menekan **Tampilkan**; opsi **Selalu tampilkan konten 18+**
+disimpan di `localStorage` dan bisa dimatikan lagi lewat badge `18+`. Owner juga
+mendapat tombol `18+` di pesan notifikasi upload; menekannya menandai konten,
+menghapus post channel lama, lalu memposting ulang versi 18+.
 
 Webhook: `POST /api/telegram/webhook`, diautentikasi lewat header
 `X-Telegram-Bot-Api-Secret-Token` yang harus sama dengan `TELEGRAM_WEBHOOK_SECRET`. Daftarkan
@@ -55,19 +74,37 @@ memakai nilai itu.
 
 ## Leaderboard
 
-Halaman `/leaderboard` dibuka dari ikon trofi di header feed. Isinya peringkat sepanjang waktu,
-bukan feed harian:
+Halaman `/leaderboard` dibuka dari ikon trofi di header feed. Ada empat tab: **Hari Ini**,
+**Minggu Ini**, **Bulan Ini**, dan **All Time** (default). Periode memakai rating yang masuk pada
+window tersebut (`ratings.created_at`), bukan tanggal upload.
 
-- **Metrik**: rata-rata rating 1–10. Bukan jumlah vote, bukan total reaksi.
-- **Minimum**: hanya media dengan **≥3 penilai** yang masuk. Sisanya menunggu vote tambahan.
+- **Window WIB**: hari 00:00, minggu Senin 00:00, bulan tanggal 1, semuanya `Asia/Jakarta`.
+- **Minimum**: 2 penilai untuk harian/mingguan; 3 untuk bulanan/all-time.
 - **Tie-break**: rata-rata sama → penilai lebih banyak → upload lebih baru (`created_at`, lalu `id`).
 - **Media**: foto dan video digabung; video memakai poster + badge play di thumbnail.
 - **Identitas**: tanpa nama uploader, hanya caption, rating, dan jumlah penilai.
 
-`GET /api/leaderboard` mengembalikan 10 besar (`getLeaderboard(10)` di `src/db/queries.ts`).
-Halaman ini mem-bootstrap sesi sendiri lewat `POST /api/session`, jadi deep link dan reload
-tetap bekerja tanpa cookie; kalau gerbang bot/channel belum lolos, user dikembalikan ke feed.
-Data kosong berarti belum ada media dengan 3 penilai, bukan error.
+`GET /api/leaderboard?period=day|week|month|all` mengembalikan
+`{ period, minVotes, start, end, entries }` (nilai kosong/tidak dikenal = `all`). Tab aktif
+disimpan di URL dan diganti dengan `router.replace`, jadi tombol back Telegram tetap kembali ke
+feed, bukan berpindah tab. Halaman mem-bootstrap sesi sendiri lewat `POST /api/session`, jadi deep
+link dan reload tetap bekerja tanpa cookie; kalau gerbang bot/channel belum lolos, user
+dikembalikan ke feed.
+
+Deep link periode: `startapp=leaderboard_hari`, `leaderboard_minggu`, `leaderboard_bulan`;
+`startapp=leaderboard` membuka All Time.
+
+### Recap otomatis ke channel
+
+`/api/cron/notify` (dipanggil setiap menit) juga mengirim recap 3 besar ke channel pada
+**21:00–23:59 WIB**: harian setiap hari, mingguan hari Minggu, bulanan di hari terakhir bulan.
+Periode tanpa cukup penilai di-skip, bukan dikirim kosong. Idempotensi dijaga tabel
+`leaderboard_announcements` dengan `unique (kind, period_start)`; kiriman yang gagal diulang
+maksimal 5 kali. Caption dipotong 60 code point (per code point, bukan byte) dan tombol recap
+menuju tab periode terkait.
+
+Env opsional: `LEADERBOARD_ANNOUNCE_HOUR` (default 21), `LEADERBOARD_CAPTION_MAX` (default 60),
+`LEADERBOARD_ANNOUNCE_DRY_RUN=1` (hanya log teks, tanpa kirim dan tanpa klaim).
 
 ## Deploy
 
@@ -147,6 +184,7 @@ src/
 - **Snap**: tap dalam radius 4% dari spot yang ada masuk ke spot itu, jadi tidak pernah lahir dua marker yang menumpuk.
 - **Tie-break** emoji dominan memakai `min(id)` per emoji — urutan insert, stabil antar render.
 - **Share**: tombol share membuat deep link `https://t.me/<bot>?startapp=<slug>` (fallback `?photo=<slug>` untuk browser). Saat dibuka dari link, foto itu dipasang sebagai kartu pertama dan **dikeluarkan dari posisi aslinya**, jadi deck lanjut di urutan normal tanpa menampilkan foto yang sama dua kali. Tidak ada state per user — dedupe-nya murni urutan deck dalam sesi itu.
+- **Deeplink leaderboard**: `https://t.me/<bot>?startapp=leaderboard` membuka Mini App lalu mendorong `/leaderboard` di atas feed. Feed tetap menjadi entri history di bawahnya, jadi tombol back kembali ke halaman rate di dalam Mini App, bukan menutup app. Nilai `leaderboard` dipesan sebagai route; `startapp` lain tetap diperlakukan sebagai slug foto.
 - **Auth**: `initData` diverifikasi di server dengan `HMAC_SHA256(key: "WebAppData", message: bot_token)`. Hanya `hash` yang dikeluarkan dari data-check-string; `signature` ikut dihitung karena klien baru mengirimkannya. `auth_date` dibatasi 24 jam.
 - **Sesi**: cookie httpOnly bertanda tangan HMAC, 7 hari. `initData` tidak dikirim ulang.
 - **Optimistic UI**: rating diterapkan lokal lalu direkonsiliasi dengan nilai server. Reaksi menunggu respons server karena server yang menentukan hasil akhir spot.

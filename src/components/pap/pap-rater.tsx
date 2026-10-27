@@ -7,15 +7,28 @@ import type { KeyboardEvent, PointerEvent, TouchEvent } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
 import { useTelegramUser } from "@/hooks/use-telegram-user";
 import { useTouchGuard } from "@/hooks/use-touch-guard";
+import { track, trackOnce } from "@/lib/analytics/track";
 import { readDeckPosition, rememberDeckPosition, restoreDeckIndex } from "@/lib/deck-position";
 import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
+import { START_BOT_GATE_ENABLED } from "@/lib/gates";
+import { markPushedPage } from "@/lib/navigation";
+import { useNsfwReveal } from "@/lib/nsfw";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { DEFAULT_RATING, PIXELS_PER_POINT, clampRating, roundRating } from "@/lib/rating";
-import { orderForSharedPhoto, readSharedSlug, telegramShareLink } from "@/lib/share";
+import {
+  leaderboardPath,
+  markStartTargetHandled,
+  orderForSharedPhoto,
+  pendingLeaderboardPeriod,
+  readSharedSlug,
+  readStartTarget,
+  telegramShareLink,
+} from "@/lib/share";
 import { getTelegramWebApp, haptic } from "@/lib/telegram";
 import type { DragAxis, InputSource, ReactionResult, SpotTarget } from "@/lib/types";
 import { AppHeader } from "./app-header";
 import { EmptyState } from "./empty-state";
+import { GenderPicker, type GenderPreference } from "./gender-picker";
 import { StartGate, type GateKind } from "./start-gate";
 import { PapCard } from "./pap-card";
 import { RatingOverlay } from "./rating-overlay";
@@ -60,6 +73,12 @@ export function PapRater() {
   const [channelUrl, setChannelUrl] = useState("");
   const [bootKey, setBootKey] = useState(0);
   const gateRef = useRef<GateKind | null>(null);
+  // null means the user has not picked a feed filter yet; the picker is shown
+  // once and the choice is stored on the user row, not in the browser.
+  const [preference, setPreference] = useState<GenderPreference | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [savingPreference, setSavingPreference] = useState(false);
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
 
   const ratingRef = useRef(DEFAULT_RATING);
   const isRatingRef = useRef(false);
@@ -105,22 +124,61 @@ export function PapRater() {
           started: boolean;
           subscribed: boolean;
           channelUrl: string;
+          preference: GenderPreference | null;
+          owner: boolean;
         };
 
-        // Bot first, then the channel; the app stays closed until both pass.
-        const nextGate: GateKind | null = !sessionBody.started
-          ? "start"
-          : !sessionBody.subscribed
-            ? "channel"
-            : null;
+        // Bot first, then the channel; the start gate can be hidden by config.
+        const nextGate: GateKind | null =
+          START_BOT_GATE_ENABLED && !sessionBody.started
+            ? "start"
+            : !sessionBody.subscribed
+              ? "channel"
+              : null;
 
         gateRef.current = nextGate;
+        // Once per app launch: a remount must not double the open count.
+        trackOnce("app_open", "app_open", {
+          meta: {
+            startParam:
+              getTelegramWebApp()?.initDataUnsafe?.start_param ?? null,
+            gate: nextGate,
+          },
+        });
         if (!cancelled) {
           setGate(nextGate);
           setChannelUrl(sessionBody.channelUrl);
+          setPreference(sessionBody.preference ?? null);
         }
 
         if (nextGate) {
+          if (!cancelled) setLoadState("ready");
+          return;
+        }
+
+        // Owner analytics: the page checks the session again, so the same link
+        // opened by someone else just lands on the feed.
+        if (sessionBody.owner && readStartTarget()?.type === "stats") {
+          markStartTargetHandled();
+          markPushedPage();
+          router.push("/stats");
+          return;
+        }
+
+        // A `startapp=leaderboard*` link still passes the gates on the feed
+        // first. Push the leaderboard on top of it so the native back button
+        // returns to the feed inside the Mini App instead of closing it.
+        const leaderboardPeriod = pendingLeaderboardPeriod();
+        if (!cancelled && leaderboardPeriod) {
+          markStartTargetHandled();
+          markPushedPage();
+          router.push(leaderboardPath(leaderboardPeriod));
+          return;
+        }
+
+        // First visit: the filter has to be picked before the deck makes
+        // sense, so skip the feed fetch until the user chooses.
+        if (!sessionBody.preference) {
           if (!cancelled) setLoadState("ready");
           return;
         }
@@ -130,6 +188,10 @@ export function PapRater() {
 
         const body = (await response.json()) as { photos: FeedPhoto[] };
         if (cancelled) return;
+
+        track("feed_loaded", {
+          meta: { count: body.photos.length, pref: sessionBody.preference },
+        });
 
         // A share link pins its photo first; the rest keeps the normal order
         // and the pinned photo is dropped from its original position.
@@ -185,7 +247,7 @@ export function PapRater() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [identity, bootKey]);
+  }, [identity, bootKey, router]);
 
   const recheckChannel = useCallback(async () => {
     const response = await fetch("/api/subscription/check", { method: "POST" });
@@ -194,6 +256,7 @@ export function PapRater() {
     const body = (await response.json()) as { subscribed: boolean };
     if (!body.subscribed) return false;
 
+    track("gate_pass", { meta: { kind: "channel" } });
     setBootKey((key) => key + 1);
     return true;
   }, []);
@@ -206,6 +269,36 @@ export function PapRater() {
   }, []);
 
   const activeItem = photos?.[currentIndex];
+  const nsfwGlobal = useNsfwReveal();
+
+  // An impression is a card that stays on screen, not one that is prefetched
+  // while the user swipes past it.
+  useEffect(() => {
+    if (!photos || photos.length === 0) return;
+    if (gate || preference === null || pickerOpen) return;
+
+    const photo = photos[currentIndex];
+    if (!photo) return;
+
+    const timer = setTimeout(() => {
+      trackOnce("photo_view:" + photo.id, "photo_view", {
+        photoId: photo.id,
+        meta: {
+          index: currentIndex,
+          media: photo.mediaType,
+          nsfw: photo.isNsfw,
+          blurred: photo.isNsfw && !nsfwGlobal,
+        },
+      });
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [photos, currentIndex, gate, preference, pickerOpen, nsfwGlobal]);
+
+  useEffect(() => {
+    if (!gate) return;
+    trackOnce("gate_shown:" + gate, "gate_shown", { meta: { kind: gate } });
+  }, [gate]);
 
   const setRatingValue = useCallback((next: number) => {
     if (next === ratingRef.current) return;
@@ -593,11 +686,59 @@ export function PapRater() {
     swipe.current.active = false;
   };
 
+  /** Stores the pick, then rebuilds the deck for the new filter. */
+  const choosePreference = useCallback(async (value: GenderPreference) => {
+    setSavingPreference(true);
+    setPreferenceError(null);
+
+    try {
+      const response = await fetch("/api/preferences/gender", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ preference: value }),
+      });
+      if (!response.ok) throw new Error("preference");
+
+      setPreference(value);
+      setPickerOpen(false);
+      track("pref_change", { meta: { pref: value } });
+
+      // Old deck positions mean nothing once the filter changes.
+      const feed = await fetch("/api/feed");
+      if (!feed.ok) throw new Error("feed");
+
+      const body = (await feed.json()) as { photos: FeedPhoto[] };
+      track("feed_loaded", {
+        meta: { count: body.photos.length, pref: value },
+      });
+      const deck = orderForSharedPhoto(body.photos, sharedSlugRef.current);
+      setPhotos(deck);
+      setCurrentIndex(0);
+
+      const initial = deck[0]?.rating.mine ?? DEFAULT_RATING;
+      ratingRef.current = initial;
+      setRating(initial);
+
+      if (deck[0]) {
+        rememberDeckPosition({
+          slug: deck[0].slug,
+          index: 0,
+          sharedSlug: sharedSlugRef.current,
+        });
+      }
+    } catch {
+      setPreferenceError("Gagal menyimpan pilihan. Coba lagi.");
+    } finally {
+      setSavingPreference(false);
+    }
+  }, []);
+
   const shareCurrentPhoto = useCallback(() => {
     const photo = photosRef.current?.[currentIndex];
     if (!photo) return;
 
     haptic("impact");
+    track("share", { photoId: photo.id, meta: { channel: "telegram" } });
     const link = telegramShareLink(photo.slug, photo.caption);
 
     const webApp = getTelegramWebApp();
@@ -629,7 +770,26 @@ export function PapRater() {
     return <StartGate kind={gate} channelUrl={channelUrl} onRecheck={recheckChannel} />;
   }
 
-  if (photos && photos.length === 0) return <EmptyState />;
+  if (preference === null || pickerOpen) {
+    return (
+      <GenderPicker
+        value={preference}
+        busy={savingPreference}
+        error={preferenceError}
+        onPick={(value) => void choosePreference(value)}
+        onClose={preference === null ? undefined : () => setPickerOpen(false)}
+      />
+    );
+  }
+
+  if (photos && photos.length === 0) {
+    return (
+      <EmptyState
+        filtered={preference !== "all"}
+        onShowAll={() => void choosePreference("all")}
+      />
+    );
+  }
 
   if (loadState === "error" || !photos) {
     return (
@@ -654,11 +814,19 @@ export function PapRater() {
           setReactionsVisible((visible) => !visible);
         }}
         onShare={shareCurrentPhoto}
-        onLeaderboardClick={() => router.push("/leaderboard")}
+        onLeaderboardClick={() => {
+          markPushedPage();
+          router.push("/leaderboard");
+        }}
+        preference={preference}
+        onPreferenceClick={() => {
+          setPreferenceError(null);
+          setPickerOpen(true);
+        }}
       />
 
       <section
-        aria-label="Tumpukan foto untuk dinilai"
+        aria-label="Tumpukan foto untuk di-rating"
         className="scene relative min-h-0 flex-1 touch-none overflow-hidden rounded-3xl"
         onPointerDown={handleSwipeStart}
         onPointerMove={handleSwipeMove}

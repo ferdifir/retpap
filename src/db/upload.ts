@@ -16,7 +16,13 @@ export interface UploadSession {
   imageHeight: number | null;
   durationSeconds: number | null;
   caption: string | null;
+  /** null means the 18+ question has not been answered yet. */
+  isNsfw: boolean | null;
+  /** null means the female/male question has not been answered yet. */
+  gender: ContentGender | null;
 }
+
+export type ContentGender = "female" | "male";
 
 export async function getUploadSession(telegramId: number): Promise<UploadSession | null> {
   const { db } = getDb();
@@ -33,6 +39,8 @@ export async function getUploadSession(telegramId: number): Promise<UploadSessio
     imageHeight: row.imageHeight,
     durationSeconds: row.durationSeconds,
     caption: row.caption,
+    isNsfw: row.isNsfw,
+    gender: row.gender === "female" || row.gender === "male" ? row.gender : null,
   };
 }
 
@@ -51,6 +59,8 @@ export async function saveUploadSession(session: UploadSession): Promise<void> {
       imageHeight: session.imageHeight,
       durationSeconds: session.durationSeconds,
       caption: session.caption,
+      isNsfw: session.isNsfw,
+      gender: session.gender,
     })
     .onConflictDoUpdate({
       target: uploadSessions.telegramId,
@@ -63,6 +73,8 @@ export async function saveUploadSession(session: UploadSession): Promise<void> {
         imageHeight: session.imageHeight,
         durationSeconds: session.durationSeconds,
         caption: session.caption,
+        isNsfw: session.isNsfw,
+        gender: session.gender,
         updatedAt: new Date(),
       },
     });
@@ -84,6 +96,9 @@ export interface NewPhoto {
   posterUrl?: string | null;
   /** Uploader, so they can be notified about activity on the photo. */
   userId?: number | null;
+  isNsfw?: boolean;
+  /** null keeps the row unlabelled, so it shows under every feed filter. */
+  gender?: ContentGender | null;
 }
 
 export async function createPhoto(input: NewPhoto): Promise<number> {
@@ -101,6 +116,8 @@ export async function createPhoto(input: NewPhoto): Promise<number> {
       durationSeconds: input.durationSeconds ?? null,
       posterUrl: input.posterUrl ?? null,
       userId: input.userId ?? null,
+      isNsfw: input.isNsfw ?? false,
+      gender: input.gender ?? null,
     })
     .returning({ id: photos.id });
 

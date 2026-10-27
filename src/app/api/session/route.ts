@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { upsertUser } from "@/db/queries";
 import { probePrivateChat } from "@/lib/bot/api";
-import { CHANNEL_URL, isChannelMember } from "@/lib/bot/channel";
+import { CHANNEL_URL, isChannelMember, ownerTelegramId } from "@/lib/bot/channel";
 import { verifyInitData } from "@/lib/init-data";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken } from "@/lib/session";
 
@@ -84,6 +84,11 @@ export async function POST(request: Request) {
     started: started || process.env.NODE_ENV !== "production",
     subscribed: subscribed || process.env.NODE_ENV !== "production",
     channelUrl: CHANNEL_URL,
+    // null until the user picks a feed filter; the picker only shows then.
+    preference: user.genderPreference,
+    // Only tells the caller about themselves; every owner route still checks
+    // the session server-side.
+    owner: ownerTelegramId() === user.telegramId,
     user: {
       id: user.id,
       firstName: user.firstName,

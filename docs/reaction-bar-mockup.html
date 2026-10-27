@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup bar reaksi — RetPAP</title>
+<style>
+  :root { --amber:#fbbf24; --line:rgba(148,163,184,.22); }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:#070b14; color:#e2e8f0;
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { display:grid; grid-template-columns:minmax(0,420px) minmax(0,400px); gap:36px;
+    padding:32px; align-items:start; justify-content:center; }
+  @media (max-width:940px) { .wrap { grid-template-columns:minmax(0,420px); } }
+  h1 { font-size:16px; margin:0 0 4px; }
+  p.lead { margin:0 0 18px; font-size:12px; line-height:1.6; color:#94a3b8; }
+  h2 { font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#64748b; margin:22px 0 8px; }
+
+  .phone { position:relative; width:390px; height:844px; border-radius:34px; overflow:hidden;
+    background:#0b1220; border:1px solid #1e293b; box-shadow:0 30px 80px rgba(0,0,0,.6);
+    display:flex; flex-direction:column; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:14px 16px 10px; }
+  .score { display:flex; align-items:baseline; gap:6px; }
+  .score b { color:var(--amber); font-size:17px; }
+  .score span { font-size:11px; color:#94a3b8; }
+  .photobox { position:relative; flex:1; margin:0 10px 10px; border-radius:22px; overflow:hidden;
+    border:1px solid #1e293b; background:#020617; }
+  .photobox img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .tapzone { position:absolute; inset:0; cursor:crosshair; touch-action:manipulation;
+    user-select:none; -webkit-user-select:none; }
+
+  /* ---------------- bar ---------------- */
+  .bar { position:absolute; display:flex; align-items:center; gap:2px;
+    padding:7px 8px; border-radius:999px;
+    background:#16233a;
+    box-shadow:0 14px 34px rgba(2,6,23,.72), 0 2px 0 rgba(255,255,255,.04) inset;
+    transform:translateY(0); opacity:0; pointer-events:none; transition:opacity .14s ease; }
+  .bar.show { opacity:1; pointer-events:auto; animation:pop .16s ease-out both; }
+  @keyframes pop { from { opacity:0; transform:scale(.94); } to { opacity:1; transform:none; } }
+
+  .tail { position:absolute; width:14px; height:14px; background:#16233a;
+    transform:rotate(45deg); border-radius:3px; }
+  .bar.above .tail { bottom:-6px; }
+  .bar.below .tail { top:-6px; }
+
+  .cell { position:relative; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:1px; width:44px; height:46px;
+    border:0; background:none; cursor:pointer; padding:0; border-radius:12px;
+    font-size:26px; line-height:1; transition:transform .12s, background .12s; }
+  .cell span.e { display:block; transform:translateZ(0); }
+  .cell:hover { transform:translateY(-2px) scale(1.08); }
+  .cell:active { transform:scale(.94); }
+  .cell .n { font-size:8px; font-weight:900; color:#fcd34d; letter-spacing:-.02em;
+    line-height:1; font-variant-numeric:tabular-nums; }
+  .cell.mine { background:rgba(251,191,36,.18); box-shadow:0 0 0 1.5px rgba(251,191,36,.55) inset; }
+
+  .more { display:grid; place-items:center; width:34px; height:34px; margin-left:4px;
+    border-radius:999px; border:0; cursor:pointer; color:#cbd5e1;
+    background:rgba(148,163,184,.14); font-size:15px; line-height:1; }
+  .more:hover { background:rgba(148,163,184,.26); color:#fff; }
+
+  /* variant A — chip per emoji */
+  .v-a .cell { width:48px; height:44px; border-radius:999px; font-size:22px;
+    background:rgba(251,191,36,.08); box-shadow:0 0 0 1px rgba(251,191,36,.22) inset; }
+  .v-a .cell + .cell { margin-left:3px; }
+  /* variant B — flat, no container */
+  .v-b { padding:9px 10px; }
+  .v-b .cell { width:43px; font-size:27px; }
+  /* variant C — rounded square tile */
+  .v-c { padding:8px; }
+  .v-c .cell { width:43px; height:46px; border-radius:13px; font-size:24px;
+    background:rgba(255,255,255,.05); }
+  .v-c .cell + .cell { margin-left:3px; }
+
+  /* ---------------- side panel ---------------- */
+  .card { border:1px solid #1e293b; border-radius:14px; padding:14px; background:#0b1220; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  .btn { font-size:11px; font-weight:700; padding:7px 11px; border-radius:9px; cursor:pointer;
+    border:1px solid #334155; background:#111c30; color:#cbd5e1; }
+  .btn.on { border-color:var(--amber); background:rgba(251,191,36,.14); color:#fcd34d; }
+  .btn:hover { border-color:#475569; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:6px 10px; font-size:11px; color:#94a3b8; }
+  .kv b { color:#e2e8f0; font-variant-numeric:tabular-nums; }
+  pre { margin:10px 0 0; padding:11px; border-radius:10px; background:#020617;
+    border:1px solid #1e293b; font-size:10.5px; line-height:1.55; overflow:auto; color:#a5b4fc; }
+  ul { margin:8px 0 0; padding-left:16px; font-size:11.5px; line-height:1.7; color:#94a3b8; }
+  code { font-size:10.5px; color:#fcd34d; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="phone">
+    <div class="topbar">
+      <div class="score"><b>8.4</b><span>rating</span></div>
+      <div style="font-size:11px;color:#64748b">1 / 24</div>
+    </div>
+    <div class="photobox" id="box">
+      <img src="../public/foto.jpg" alt="foto">
+      <div class="tapzone" id="zone"></div>
+      <div class="bar v-a above" id="bar">
+        <span class="tail" id="tail"></span>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <h1>Bar reaksi satu baris</h1>
+    <p class="lead">Ketuk di mana saja pada foto. Bar muncul satu baris dengan ekor yang
+      menunjuk tepat ke titik ketuk — bukan selalu ke tengah bar.</p>
+
+    <h2>Varian</h2>
+    <div class="card">
+      <div class="row" id="variants">
+        <button class="btn on" data-v="v-a">A · Chip</button>
+        <button class="btn" data-v="v-b">B · Flat</button>
+        <button class="btn" data-v="v-c">C · Tile</button>
+      </div>
+      <ul>
+        <li><b>A</b> — tiap emoji punya kapsul tipis amber, konsisten dengan bar lama.</li>
+        <li><b>B</b> — polos, emoji paling besar (28px), paling mirip screenshot.</li>
+        <li><b>C</b> — tile rounded-square abu, kesan “keyboard”.</li>
+      </ul>
+    </div>
+
+    <h2>Uji ekor</h2>
+    <div class="card">
+      <div class="row">
+        <button class="btn" data-x="0.06">Tepi kiri</button>
+        <button class="btn" data-x="0.5">Tengah</button>
+        <button class="btn" data-x="0.94">Tepi kanan</button>
+        <button class="btn" data-x="0.2" data-y="0.04">Atas (bar ke bawah)</button>
+        <button class="btn" data-x="0.2" data-y="0.94">Bawah (bar ke atas)</button>
+      </div>
+      <div class="kv" style="margin-top:12px">
+        <span>ketuk x</span><b id="kx">—</b>
+        <span>bar left</span><b id="kbl">—</b>
+        <span>ekor</span><b id="kt">—</b>
+        <span>arah</span><b id="kd">—</b>
+      </div>
+    </div>
+
+    <h2>Aturan</h2>
+    <div class="card">
+      <ul>
+        <li>Bar selalu <b>satu baris</b>: 6 emoji + tombol <code>⌄</code>, tidak pernah wrap.</li>
+        <li>Lebar bar tetap <code>≈304px</code>; posisi <code>left</code> dijepit 8px dari tepi foto.</li>
+        <li>Ekor: <code>left = clamp(tapX − barLeft, 18, barW − 18)</code>, jadi selalu di atas titik ketuk walau bar mentok tepi.</li>
+        <li>Bar di atas titik kalau ruang atas ≥ 62px, kalau tidak pindah ke bawah (ekor ikut pindah ke sisi atas).</li>
+        <li>Angka reaksi hanya muncul kalau <code>count &gt; 0</code>, 8.5px, pojok kanan-bawah.</li>
+      </ul>
+      <pre>left  = clamp(tapX - barW / 2, 8, boxW - barW - 8)
+tailX = clamp(tapX - left, 18, barW - 18)</pre>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const EMOJIS = [["❤️",0],["👍",12],["👎",3],["🔥",48],["🥰",7],["👏",0]];
+  const bar  = document.getElementById('bar');
+  const tail = document.getElementById('tail');
+  const zone = document.getElementById('zone');
+  const box  = document.getElementById('box');
+  const out  = { kx:document.getElementById('kx'), kbl:document.getElementById('kbl'),
+                 kt:document.getElementById('kt'), kd:document.getElementById('kd') };
+
+  bar.innerHTML = '<span class="tail" id="tail"></span>' + EMOJIS.map(([e,n],i) =>
+      '<button class="cell' + (i===3 ? ' mine' : '') + '" aria-label="Reaksi ' + e + '">' +
+        '<span class="e">' + e + '</span>' + (n ? '<span class="n">' + n + '</span>' : '') +
+      '</button>').join('') +
+    '<button class="more" aria-label="Emoji lainnya">⌄</button>';
+  const tailEl = bar.querySelector('.tail');
+
+  function clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
+
+  function place(fx, fy) {
+    const boxW = box.clientWidth, boxH = box.clientHeight;
+    const tapX = fx * boxW, tapY = fy * boxH;
+
+    bar.classList.add('show');
+    const barW = bar.offsetWidth, barH = bar.offsetHeight;
+
+    const above = tapY > barH + 26;
+    const left  = clamp(tapX - barW / 2, 8, boxW - barW - 8);
+    const top   = above ? tapY - barH - 14 : tapY + 14;
+    const tailX = clamp(tapX - left, 18, barW - 18);
+
+    bar.classList.toggle('above', above);
+    bar.classList.toggle('below', !above);
+    bar.style.left = left + 'px';
+    bar.style.top  = Math.max(6, Math.min(top, boxH - barH - 6)) + 'px';
+    tailEl.style.left = (tailX - 7) + 'px';
+
+    out.kx.textContent  = Math.round(tapX) + 'px';
+    out.kbl.textContent = Math.round(left) + 'px';
+    out.kt.textContent  = Math.round(tailX) + 'px';
+    out.kd.textContent  = above ? 'bar di atas' : 'bar di bawah';
+  }
+
+  zone.addEventListener('pointerdown', (e) => {
+    const r = box.getBoundingClientRect();
+    place((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  });
+
+  document.querySelectorAll('[data-x]').forEach((b) => {
+    b.addEventListener('click', () => place(+b.dataset.x, +(b.dataset.y ?? 0.55)));
+  });
+
+  document.querySelectorAll('#variants .btn').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#variants .btn').forEach((o) => o.classList.remove('on'));
+      b.classList.add('on');
+      bar.className = 'bar ' + b.dataset.v + ' show ' + (bar.classList.contains('below') ? 'below' : 'above');
+      const last = bar.dataset.last || '0.5,0.55';
+      place(...last.split(',').map(Number));
+    });
+  });
+
+  const origPlace = place;
+  place = function (fx, fy) { bar.dataset.last = fx + ',' + fy; return origPlace(fx, fy); };
+
+  // #v-b / #v-c in the URL opens that variant directly.
+  const hash = (location.hash || "").replace("#", "");
+  if (["v-a", "v-b", "v-c"].includes(hash)) {
+    document.querySelectorAll("#variants .btn").forEach((b) => {
+      const on = b.dataset.v === hash;
+      b.classList.toggle("on", on);
+      if (on) bar.classList.remove("v-a", "v-b", "v-c"), bar.classList.add(hash);
+    });
+  }
+
+  setTimeout(() => place(0.52, 0.55), 120);
+  window.addEventListener('resize', () => { const l = (bar.dataset.last||'0.5,0.55').split(',').map(Number); place(l[0], l[1]); });
+</script>
+</body>
+</html>

@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
+import { nsfwBadge } from "./nsfw-badge";
 
 /** ffmpeg is installed on the deploy host; FFMPEG_PATH is an escape hatch. */
 function ffmpegPath(): string {
@@ -72,6 +73,7 @@ const TEASER_SECONDS = 3;
 const TEASER_BOX = 480;
 const TEASER_FPS = 15;
 const TEASER_BLUR_SIGMA = 7;
+const NSFW_TEASER_BLUR_SIGMA = 14;
 const TEASER_CRF = 32;
 const TEASER_TIMEOUT_MS = 20_000;
 
@@ -81,11 +83,20 @@ const TEASER_TIMEOUT_MS = 20_000;
  * the channel. The result is only a few hundred KB and is discarded after the
  * Telegram upload, so it never needs a permanent path.
  */
-export async function extractTeaser(videoPath: string): Promise<Buffer | null> {
+export async function extractTeaser(
+  videoPath: string,
+  options: { nsfw?: boolean } = {},
+): Promise<Buffer | null> {
   const dir = await mkdtemp(join(tmpdir(), "retpap-teaser-"));
   const output = join(dir, "teaser.mp4");
+  const badgePath = join(dir, "badge.png");
+  const hasBadge = options.nsfw === true;
 
   try {
+    // Without the badge the 18+ teaser must not be produced at all, so a
+    // failure here propagates and the caller falls back to a spoiler cover.
+    if (hasBadge) await writeFile(badgePath, await nsfwBadge(84));
+
     const rendered = await new Promise<boolean>((resolve) => {
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
@@ -97,47 +108,51 @@ export async function extractTeaser(videoPath: string): Promise<Buffer | null> {
         resolve(ok);
       };
 
+      const blur =
+        "fps=" +
+        TEASER_FPS +
+        ",scale=" +
+        TEASER_BOX +
+        ":" +
+        TEASER_BOX +
+        ":force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,gblur=sigma=" +
+        (options.nsfw ? NSFW_TEASER_BLUR_SIGMA : TEASER_BLUR_SIGMA);
+
+      const args = ["-hide_banner", "-loglevel", "error", "-y", "-i", videoPath];
+      if (hasBadge) args.push("-i", badgePath);
+      args.push("-t", String(TEASER_SECONDS));
+      if (hasBadge) {
+        args.push(
+          "-filter_complex",
+          "[0:v]" + blur + "[bg];[bg][1:v]overlay=W-w-24:24[out]",
+          "-map",
+          "[out]",
+        );
+      } else {
+        args.push("-vf", blur);
+      }
+      args.push(
+        // Audio is never part of the teaser: blur does not hide voices.
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        String(TEASER_CRF),
+        "-pix_fmt",
+        "yuv420p",
+        // Keep one core free for the web app; uploads are infrequent.
+        "-threads",
+        "1",
+        "-movflags",
+        "+faststart",
+        output,
+      );
+
       let child: ReturnType<typeof spawn>;
       try {
-        child = spawn(
-          ffmpegPath(),
-          [
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            videoPath,
-            "-t",
-            String(TEASER_SECONDS),
-            "-vf",
-            "fps=" +
-              TEASER_FPS +
-              ",scale=" +
-              TEASER_BOX +
-              ":" +
-              TEASER_BOX +
-              ":force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,gblur=sigma=" +
-              TEASER_BLUR_SIGMA,
-            // Audio is never part of the teaser: blur does not hide voices.
-            "-an",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-crf",
-            String(TEASER_CRF),
-            "-pix_fmt",
-            "yuv420p",
-            // Keep one core free for the web app; uploads are infrequent.
-            "-threads",
-            "1",
-            "-movflags",
-            "+faststart",
-            output,
-          ],
-          { stdio: ["ignore", "ignore", "pipe"] },
-        );
+        child = spawn(ffmpegPath(), args, { stdio: ["ignore", "ignore", "pipe"] });
       } catch {
         finish(false);
         return;
@@ -157,6 +172,82 @@ export async function extractTeaser(videoPath: string): Promise<Buffer | null> {
     return await readFile(output);
   } catch {
     return null;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/** Path to ffprobe; FFPROBE_PATH is an escape hatch alongside FFMPEG_PATH. */
+function ffprobePath(): string {
+  const configured = process.env.FFPROBE_PATH?.trim();
+  return configured && configured.length > 0 ? configured : "ffprobe";
+}
+
+const PROBE_TIMEOUT_MS = 20_000;
+
+/**
+ * Probes a video in memory for its display dimensions and duration. Writes the
+ * bytes to a temp file first because some containers (notably MP4) need to
+ * seek, which a pipe cannot provide. Returns null when ffprobe is missing or
+ * the file is not a decodable video.
+ */
+export async function probeVideo(
+  video: Buffer,
+): Promise<{ width: number; height: number; duration: number } | null> {
+  const dir = await mkdtemp(join(tmpdir(), "retpap-probe-"));
+  const input = join(dir, "input");
+  await writeFile(input, video);
+
+  try {
+    return await new Promise((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const finish = (value: { width: number; height: number; duration: number } | null) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        resolve(value);
+      };
+
+      let child: ReturnType<typeof spawn>;
+      try {
+        child = spawn(ffprobePath(), [
+          "-v", "error",
+          "-select_streams", "v:0",
+          "-show_entries", "stream=width,height:format=duration",
+          "-of", "json",
+          input,
+        ]);
+      } catch {
+        finish(null);
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      child.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
+      // Drain stderr: an unread pipe would block ffprobe.
+      child.stderr?.on("data", () => undefined);
+      child.on("error", () => finish(null));
+      child.on("close", (code) => {
+        if (code !== 0) return finish(null);
+        try {
+          const json = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          const stream = json.streams?.[0];
+          const duration = Number(json.format?.duration);
+          if (!stream?.width || !stream?.height || !Number.isFinite(duration)) {
+            return finish(null);
+          }
+          finish({ width: stream.width, height: stream.height, duration: Math.round(duration) });
+        } catch {
+          finish(null);
+        }
+      });
+
+      timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        finish(null);
+      }, PROBE_TIMEOUT_MS);
+    });
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }

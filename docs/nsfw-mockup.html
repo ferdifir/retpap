@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup konten 18+ — RetPAP</title>
+<style>
+  :root {
+    --cyan: #22d3ee;
+    --amber: #fbbf24;
+    --red: #dc2626;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --line: rgba(148, 163, 184, .18);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #070b14; color: var(--text); }
+  body {
+    min-height: 100vh;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background:
+      radial-gradient(ellipse at 12% 0%, rgba(34, 211, 238, .10), transparent 38%),
+      radial-gradient(ellipse at 88% 8%, rgba(220, 38, 38, .08), transparent 34%),
+      #070b14;
+  }
+  .page { padding: 32px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  p.lead { margin: 0 0 24px; font-size: 12px; line-height: 1.6; color: var(--muted); max-width: 980px; }
+  .wrap {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 390px));
+    gap: 28px;
+    justify-content: center;
+    align-items: start;
+  }
+  @media (max-width: 1280px) { .wrap { grid-template-columns: repeat(2, minmax(0, 390px)); } }
+  @media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 390px); } .page { padding: 16px; } }
+
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    border-radius: 34px;
+    overflow: hidden;
+    background: #0b1220;
+    border: 1px solid #1e293b;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+    display: flex;
+    flex-direction: column;
+  }
+  .caption-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  .caption-label b { color: var(--cyan); }
+
+  /* ---------- header ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 14px 10px;
+    flex-shrink: 0;
+  }
+  .score { display: flex; align-items: center; gap: 10px; }
+  .orb {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center;
+    border: 1px solid var(--line);
+    background: rgba(15, 23, 42, .8);
+    font-size: 15px;
+  }
+  .score b { color: var(--amber); font-size: 16px; }
+  .score span { font-size: 11px; color: var(--muted); }
+  .actions { display: flex; gap: 6px; align-items: center; }
+  .iconbtn {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid var(--line);
+    background: rgba(30, 41, 59, .65);
+    display: grid; place-items: center;
+    color: #cbd5e1; font-size: 13px;
+  }
+  .iconbtn.red { color: #fca5a5; border-color: rgba(248, 113, 113, .35); background: rgba(127, 29, 29, .35); }
+  .iconbtn .dot { width: 6px; height: 6px; border-radius: 50%; background: #ef4444; }
+
+  /* ---------- card ---------- */
+  .card {
+    flex: 1; min-height: 0;
+    margin: 0 10px;
+    display: flex; flex-direction: column;
+    gap: 8px;
+  }
+  .photobox {
+    position: relative;
+    flex: 1; min-height: 0;
+    border-radius: 22px;
+    overflow: hidden;
+    border: 1px solid #1e293b;
+    background: #020617;
+  }
+  .photobox img.base {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    user-select: none;
+  }
+  /* blur 18+ di feed */
+  .photobox.is-blurred img.base {
+    filter: blur(36px) brightness(.48) saturate(.85);
+    transform: scale(1.14);
+  }
+  .shade {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(2, 6, 23, .15) 0%, rgba(2, 6, 23, .55) 62%, rgba(2, 6, 23, .82) 100%);
+    pointer-events: none;
+  }
+
+  /* badge 18+ kanan atas */
+  .nsfw-badge {
+    position: absolute; top: 12px; right: 12px; z-index: 5;
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 42px; height: 26px; padding: 0 9px;
+    border-radius: 9px;
+    background: var(--red);
+    color: #fff;
+    font-size: 12px; font-weight: 900; letter-spacing: .02em;
+    border: 1px solid rgba(255, 255, 255, .28);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .45);
+  }
+  .nsfw-badge.small { min-width: 34px; height: 22px; font-size: 10px; border-radius: 7px; opacity: .92; }
+
+  /* overlay gate */
+  .gate {
+    position: absolute; inset: 0; z-index: 4;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 10px;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(ellipse at 50% 42%, rgba(15, 23, 42, .55), rgba(2, 6, 23, .78) 72%);
+    backdrop-filter: blur(1px);
+  }
+  .gate .lock {
+    width: 46px; height: 46px; border-radius: 14px;
+    display: grid; place-items: center;
+    background: rgba(220, 38, 38, .16);
+    border: 1px solid rgba(248, 113, 113, .35);
+    color: #fca5a5;
+    font-size: 20px;
+  }
+  .gate h2 { margin: 0; font-size: 15px; font-weight: 900; }
+  .gate p { margin: 0; font-size: 11px; line-height: 1.55; color: var(--muted); max-width: 240px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    border: 0; cursor: pointer;
+    font-family: inherit; font-weight: 800;
+  }
+  .btn-primary {
+    width: 100%; max-width: 220px;
+    padding: 10px 16px; border-radius: 12px;
+    font-size: 12px; color: #04222b;
+    background: linear-gradient(135deg, #67e8f9, #22d3ee);
+    box-shadow: 0 10px 24px rgba(34, 211, 238, .25);
+  }
+  .btn-ghost {
+    width: 100%; max-width: 220px;
+    padding: 9px 14px; border-radius: 12px;
+    font-size: 11px; color: #cbd5e1;
+    background: rgba(30, 41, 59, .65);
+    border: 1px solid var(--line);
+  }
+
+  /* toggle selalu tampilkan (varian A) */
+  .remember {
+    width: 100%; max-width: 220px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 11px;
+    border: 1px solid var(--line);
+    background: rgba(15, 23, 42, .72);
+    text-align: left;
+  }
+  .remember span { font-size: 10.5px; line-height: 1.3; color: #cbd5e1; font-weight: 600; }
+  .switch {
+    width: 34px; height: 19px; border-radius: 999px;
+    background: #334155; position: relative; flex-shrink: 0;
+    transition: background .2s;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 15px; height: 15px; border-radius: 50%;
+    background: #e2e8f0; transition: transform .2s;
+  }
+  .switch.on { background: var(--cyan); }
+  .switch.on::after { transform: translateX(15px); background: #04222b; }
+
+  /* toggle di header (varian B) */
+  .header-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(248, 113, 113, .35);
+    background: rgba(127, 29, 29, .28);
+    color: #fecaca;
+    font-size: 10px; font-weight: 800;
+  }
+  .header-toggle .switch { width: 28px; height: 16px; }
+  .header-toggle .switch::after { width: 12px; height: 12px; }
+  .header-toggle .switch.on::after { transform: translateX(12px); }
+
+  /* caption + nav */
+  .caption {
+    border-radius: 12px;
+    border: 1px solid #1e293b;
+    background: rgba(15, 23, 42, .6);
+    padding: 7px 10px;
+    text-align: center;
+    font-size: 11px; font-weight: 600;
+    color: #e2e8f0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    flex-shrink: 0;
+  }
+  .nav { display: flex; gap: 8px; flex-shrink: 0; padding-bottom: 12px; }
+  .nav button {
+    flex: 1; padding: 9px 8px; border-radius: 11px;
+    border: 1px solid var(--line);
+    background: rgba(15, 23, 42, .55);
+    color: #cbd5e1; font-size: 11px; font-weight: 700;
+    font-family: inherit;
+  }
+
+  /* revealed hint */
+  .hint {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    z-index: 5;
+    padding: 5px 10px; border-radius: 999px;
+    background: rgba(2, 6, 23, .7);
+    border: 1px solid var(--line);
+    font-size: 9.5px; color: #94a3b8;
+    white-space: nowrap;
+  }
+
+  /* channel sample */
+  .channel {
+    margin-top: 28px;
+    display: grid;
+    grid-template-columns: minmax(0, 390px);
+    justify-content: center;
+    gap: 10px;
+  }
+  .tg-post {
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid #1e293b;
+    background: #0f172a;
+  }
+  .tg-media { position: relative; height: 300px; overflow: hidden; }
+  .tg-media img {
+    width: 100%; height: 100%; object-fit: cover;
+    filter: blur(34px) brightness(.52);
+    transform: scale(1.12);
+  }
+  .tg-body { padding: 10px 12px 12px; font-size: 12px; line-height: 1.5; }
+  .tg-body .muted { color: var(--muted); font-size: 10.5px; }
+  .tg-buttons { display: flex; gap: 6px; margin-top: 10px; }
+  .tg-buttons span {
+    flex: 1; text-align: center; padding: 7px 8px;
+    border-radius: 8px; background: #1e293b; color: #bae6fd;
+    font-size: 10.5px; font-weight: 700;
+  }
+  .note { font-size: 11px; color: var(--muted); line-height: 1.6; max-width: 390px; }
+  .note b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Mockup konten 18+ di feed — RetPAP</h1>
+  <p class="lead">
+    Varian terpilih: <b>A</b> (toggle di overlay kartu). Tiga keadaan: kartu 18+
+    dengan opsi "Selalu tampilkan" di dalam overlay (A), opsi yang sama dipindah
+    ke header (B, tidak dipakai), dan kartu setelah dibuka (C).
+    Badge <b style="color:#fca5a5">18+</b> selalu di kanan atas media.
+  </p>
+
+  <div class="wrap">
+    <!-- ============ A: toggle di overlay ============ -->
+    <div>
+      <p class="caption-label">A — <b>toggle di overlay kartu</b></p>
+      <div class="phone">
+        <div class="topbar">
+          <div class="score">
+            <div class="orb">💎</div>
+            <div><b>8.4</b> <span>/ 10.0</span><br><span style="font-size:10px">1.2rb penilai</span></div>
+          </div>
+          <div class="actions">
+            <div class="iconbtn">👁</div>
+            <div class="iconbtn">↗</div>
+            <div class="iconbtn">🏆</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="photobox is-blurred">
+            <img class="base" src="../public/foto.jpg" alt="">
+            <div class="shade"></div>
+            <div class="nsfw-badge">18+</div>
+
+            <div class="gate">
+              <div class="lock">🔒</div>
+              <h2>Konten 18+</h2>
+              <p>Konten ini ditandai 18+ oleh uploader. Buka untuk melihat tanpa blur.</p>
+              <button class="btn btn-primary">Tampilkan</button>
+              <div class="remember">
+                <span>Selalu tampilkan konten 18+</span>
+                <div class="switch"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="caption">Golden hour di rooftop, Jakarta</div>
+          <div class="nav">
+            <button>⌃ Sebelumnya</button>
+            <button>Berikutnya ⌄</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ B: toggle di header ============ -->
+    <div>
+      <p class="caption-label">B — <b>toggle di header</b></p>
+      <div class="phone">
+        <div class="topbar">
+          <div class="score">
+            <div class="orb">💎</div>
+            <div><b>8.4</b> <span>/ 10.0</span><br><span style="font-size:10px">1.2rb penilai</span></div>
+          </div>
+          <div class="actions">
+            <div class="header-toggle">
+              <div class="switch"></div>
+              <span>18+</span>
+            </div>
+            <div class="iconbtn">↗</div>
+            <div class="iconbtn">🏆</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="photobox is-blurred">
+            <img class="base" src="../public/foto.jpg" alt="">
+            <div class="shade"></div>
+            <div class="nsfw-badge">18+</div>
+
+            <div class="gate">
+              <div class="lock">🔒</div>
+              <h2>Konten 18+</h2>
+              <p>Konten ini ditandai 18+ oleh uploader. Buka untuk melihat tanpa blur.</p>
+              <button class="btn btn-primary">Tampilkan</button>
+              <button class="btn btn-ghost">Lewati ke konten berikutnya</button>
+            </div>
+          </div>
+
+          <div class="caption">Golden hour di rooftop, Jakarta</div>
+          <div class="nav">
+            <button>⌃ Sebelumnya</button>
+            <button>Berikutnya ⌄</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ C: sudah dibuka ============ -->
+    <div>
+      <p class="caption-label">C — <b>setelah "Tampilkan"</b></p>
+      <div class="phone">
+        <div class="topbar">
+          <div class="score">
+            <div class="orb">💎</div>
+            <div><b>8.4</b> <span>/ 10.0</span><br><span style="font-size:10px">1.2rb penilai</span></div>
+          </div>
+          <div class="actions">
+            <div class="iconbtn">👁</div>
+            <div class="iconbtn">↗</div>
+            <div class="iconbtn">🏆</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="photobox">
+            <img class="base" src="../public/foto.jpg" alt="">
+            <div class="nsfw-badge small">18+</div>
+            <div class="hint">Tap untuk reaksi · tahan untuk komentar</div>
+          </div>
+
+          <div class="caption">Golden hour di rooftop, Jakarta</div>
+          <div class="nav">
+            <button>⌃ Sebelumnya</button>
+            <button>Berikutnya ⌄</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ contoh post channel ============ -->
+  <div class="channel">
+    <p class="caption-label" style="margin-bottom:0">Contoh post channel 18+</p>
+    <div class="tg-post">
+      <div class="tg-media">
+        <img src="../public/foto.jpg" alt="">
+        <div class="nsfw-badge">18+</div>
+      </div>
+      <div class="tg-body">
+        <div>Golden hour di rooftop, Jakarta</div>
+        <div class="muted">Rate foto ini, atau upload punyamu 👇</div>
+        <div class="tg-buttons">
+          <span>Beri nilai</span>
+          <span>Upload</span>
+        </div>
+      </div>
+    </div>
+    <p class="note">
+      Badge <b>18+</b> di-bake ke media (kanan atas), bukan di caption.
+      Blur channel lebih kuat daripada blur feed, dan tidak ada teks tambahan di caption.
+    </p>
+  </div>
+</div>
+</body>
+</html>

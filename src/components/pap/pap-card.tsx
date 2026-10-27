@@ -5,9 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, TouchEvent } from "react";
 import { ChevronDownIcon, ChevronUpIcon } from "@/components/icons";
 import { useImageBox } from "@/hooks/use-image-box";
+import { track } from "@/lib/analytics/track";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
+import { setNsfwReveal, useNsfwReveal } from "@/lib/nsfw";
 import { findSpotAt } from "@/lib/reaction-rules";
-import { pushRecentEmoji, readRecentEmojis } from "@/lib/reactions/recent";
+import { pushRecentEmoji, useRecentEmojis } from "@/lib/reactions/recent";
 import { haptic } from "@/lib/telegram";
 import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
 import type { CardPosition, DragAxis, InputSource, ReactionResult, SpotTarget } from "@/lib/types";
@@ -86,9 +88,9 @@ export function PapCard({
   const [busy, setBusy] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [reactError, setReactError] = useState<string | null>(null);
-  // The card only mounts after the feed fetch, so reading storage in the
-  // initializer cannot cause a hydration mismatch.
-  const [recent, setRecent] = useState<string[]>(() => readRecentEmojis());
+  const recent = useRecentEmojis();
+  const nsfwGlobal = useNsfwReveal();
+  const [nsfwHere, setNsfwHere] = useState(false);
   // Telegram can report a pre-rotation size for videos; the real video size
   // wins once metadata is available so markers stay on the frame.
   const [mediaSize, setMediaSize] = useState({
@@ -105,12 +107,16 @@ export function PapCard({
   const photoRef = useRef<HTMLDivElement>(null);
   const box = useImageBox(photoRef, mediaSize.width, mediaSize.height);
 
+  const nsfwHidden = item.isNsfw && !nsfwGlobal && !nsfwHere;
+  const reactionsVisible = showReactions && !nsfwHidden;
+
   const handleIntrinsicSize = useCallback((width: number, height: number) => {
     setMediaSize((current) =>
       current.width === width && current.height === height ? current : { width, height },
     );
   }, []);
 
+  const blurSrc = item.mediaType === "video" ? item.posterUrl : item.imageUrl;
   const aspect = mediaSize.height / mediaSize.width;
   // Landscape media leaves the bottom edge free; portrait keeps the right rail.
   const landscape = mediaSize.width > mediaSize.height * 1.15;
@@ -216,7 +222,7 @@ export function PapCard({
         return;
       }
 
-      setRecent(pushRecentEmoji(emoji));
+      pushRecentEmoji(emoji);
       // Picking an emoji is the whole interaction: the panel gets out of the
       // way instead of turning into a counter view.
       closePanel();
@@ -395,7 +401,21 @@ export function PapCard({
           ref={photoRef}
           className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/80 shadow-inner"
         >
-          {item.mediaType === "video" ? (
+          {nsfwHidden ? (
+            blurSrc ? (
+              <Image
+                src={blurSrc}
+                alt=""
+                fill
+                sizes="(max-width: 640px) 100vw, 448px"
+                preload={priority}
+                className="pointer-events-none select-none object-contain"
+                style={{ filter: "blur(36px) brightness(0.48)", transform: "scale(1.14)" }}
+              />
+            ) : (
+              <div className="absolute inset-0 bg-slate-900" />
+            )
+          ) : item.mediaType === "video" ? (
             <VideoSurface
               src={item.imageUrl}
               poster={item.posterUrl}
@@ -415,34 +435,111 @@ export function PapCard({
             />
           )}
 
-          <div
-            role="button"
-            tabIndex={isActive ? 0 : -1}
-            aria-label="Tap untuk reaksi emoji, tahan untuk komentar"
-            className="absolute inset-0 z-10 cursor-pointer touch-manipulation outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400"
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            onTouchCancel={() => {
-              touchTapStart.current = null;
-              clearPress();
-            }}
-            onKeyDown={handleTapKeyDown}
-          >
-            {ripple ? (
-              <span
-                key={ripple.key}
-                className="tap-ripple"
-                style={{ left: ripple.x - 20, top: ripple.y - 20 }}
-              />
-            ) : null}
-          </div>
+          {item.isNsfw ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (nsfwHidden) return;
+                setNsfwHere(false);
+                setInteraction(null);
+                setComments(null);
+                setSheetOpen(false);
+                setNsfwReveal(false);
+              }}
+              aria-label={nsfwHidden ? "Konten 18+" : "Sembunyikan konten 18+"}
+              tabIndex={nsfwHidden ? -1 : 0}
+              className={
+                "absolute top-2 right-2 z-40 rounded-md border border-white/25 bg-red-600 px-1.5 py-0.5 text-[10px] leading-none font-black text-white shadow-lg " +
+                (nsfwHidden ? "pointer-events-none" : "")
+              }
+            >
+              18+
+            </button>
+          ) : null}
+
+          {nsfwHidden ? (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-slate-950/55 px-6 text-center backdrop-blur-[1px]">
+              <span className="rounded-xl border border-red-400/35 bg-red-500/15 px-3 py-1.5 text-sm font-black text-red-200">
+                18+
+              </span>
+              <div className="space-y-1">
+                <p className="text-sm font-black text-slate-100">Konten 18+</p>
+                <p className="max-w-[240px] text-[11px] leading-relaxed text-slate-400">
+                  Konten ini ditandai 18+ oleh uploader. Buka untuk melihat tanpa blur.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  track("nsfw_reveal", { photoId: item.id, meta: { always: false } });
+                  setNsfwHere(true);
+                }}
+                className="w-full max-w-[220px] rounded-xl bg-gradient-to-r from-cyan-400 to-sky-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 shadow-lg shadow-cyan-500/25 active:scale-95"
+              >
+                Tampilkan
+              </button>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={nsfwGlobal}
+                onClick={() => {
+                  track("nsfw_reveal", { photoId: item.id, meta: { always: true } });
+                  setNsfwReveal(true);
+                }}
+                className="flex w-full max-w-[220px] items-center justify-between gap-2 rounded-xl border border-white/10 bg-slate-900/75 px-3 py-2 text-left active:scale-[0.99]"
+              >
+                <span className="text-[10.5px] leading-tight font-semibold text-slate-200">
+                  Selalu tampilkan konten 18+
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={
+                    "relative h-[18px] w-8 shrink-0 rounded-full transition-colors " +
+                    (nsfwGlobal ? "bg-cyan-400" : "bg-slate-600")
+                  }
+                >
+                  <span
+                    className={
+                      "absolute top-0.5 size-[14px] rounded-full bg-white transition-transform " +
+                      (nsfwGlobal ? "translate-x-[15px]" : "translate-x-0.5")
+                    }
+                  />
+                </span>
+              </button>
+            </div>
+          ) : null}
+
+          {!nsfwHidden ? (
+            <div
+              role="button"
+              tabIndex={isActive ? 0 : -1}
+              aria-label="Tap untuk reaksi emoji, tahan untuk komentar"
+              className="absolute inset-0 z-10 cursor-pointer touch-manipulation outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              onTouchCancel={() => {
+                touchTapStart.current = null;
+                clearPress();
+              }}
+              onKeyDown={handleTapKeyDown}
+            >
+              {ripple ? (
+                <span
+                  key={ripple.key}
+                  className="tap-ripple"
+                  style={{ left: ripple.x - 20, top: ripple.y - 20 }}
+                />
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Markers live on the image box, not on the letterboxed container. */}
-          {showReactions ? (
+          {reactionsVisible ? (
             <div
               className="pointer-events-none absolute z-20"
               style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
@@ -468,7 +565,7 @@ export function PapCard({
 
           {/* Hidden together with the reaction layer: the slider is the drag
               handle, so keeping it invisible would still swallow taps there. */}
-          {showReactions ? (
+          {reactionsVisible ? (
             <RatingSlider
               value={rating}
               dragging={ratingDragging}
@@ -482,7 +579,7 @@ export function PapCard({
             />
           ) : null}
 
-          {isActive && interaction ? (
+          {!nsfwHidden && isActive && interaction ? (
             <SpotPanel
               x={panelX}
               y={panelY}
@@ -507,7 +604,7 @@ export function PapCard({
             />
           ) : null}
 
-          {isActive && interaction && sheetOpen ? (
+          {!nsfwHidden && isActive && interaction && sheetOpen ? (
             <ReactionSheet
               spot={spot}
               error={reactError}
