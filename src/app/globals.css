@@ -360,6 +360,88 @@ html[data-tg-fullscreen="true"] .brand-strip {
   padding-left: calc(var(--app-inset-left) + 0.5rem);
 }
 
+/* The rating response changes pose by level and gets more energetic as the
+   slider moves toward 10. */
+.rating-reaction {
+  position: relative;
+  display: grid;
+  width: 5rem;
+  height: 5rem;
+  place-items: center;
+  margin-top: 0.25rem;
+  isolation: isolate;
+}
+
+.rating-reaction-image {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.24));
+  transform-origin: 50% 88%;
+}
+
+.rating-reaction-active .rating-reaction-image {
+  animation: rating-reaction-bob var(--reaction-duration, 1.2s) ease-in-out infinite;
+}
+
+.rating-reaction-settled .rating-reaction-image {
+  animation: rating-reaction-land 420ms cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+
+.rating-reaction-spark {
+  position: absolute;
+  z-index: 2;
+  width: 0.55rem;
+  aspect-ratio: 1;
+  background: #fde047;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rating-reaction-spark-left { top: 15%; left: 8%; }
+.rating-reaction-spark-right { top: 10%; right: 8%; width: 0.4rem; }
+
+.rating-reaction-active[data-level="7"] .rating-reaction-spark,
+.rating-reaction-active[data-level="8"] .rating-reaction-spark,
+.rating-reaction-active[data-level="9"] .rating-reaction-spark,
+.rating-reaction-active[data-level="10"] .rating-reaction-spark {
+  animation: rating-reaction-sparkle 1.4s ease-in-out infinite;
+}
+
+.rating-reaction-active[data-level="8"] .rating-reaction-spark-right,
+.rating-reaction-active[data-level="9"] .rating-reaction-spark-right,
+.rating-reaction-active[data-level="10"] .rating-reaction-spark-right {
+  animation-delay: 380ms;
+}
+
+@keyframes rating-reaction-bob {
+  0%, 100% { transform: translateY(0) rotate(-1deg) scale(1); }
+  48% { transform: translateY(calc(var(--reaction-bounce, 3px) * -1)) rotate(1deg) scale(1.04); }
+  72% { transform: translateY(1px) rotate(0) scale(0.99, 1.02); }
+}
+
+@keyframes rating-reaction-land {
+  0% { transform: scale(0.88) translateY(5px); }
+  60% { transform: scale(1.12) translateY(-3px); }
+  100% { transform: scale(1) translateY(0); }
+}
+
+@keyframes rating-reaction-sparkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.65) rotate(-20deg); }
+  50% { opacity: 1; transform: scale(1.2) rotate(25deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rating-reaction-image,
+  .rating-reaction-spark {
+    animation: none !important;
+  }
+}
+
 @media (min-width: 40rem) {
   .safe-shell {
     padding-top: calc(var(--app-inset-top) + 1rem);

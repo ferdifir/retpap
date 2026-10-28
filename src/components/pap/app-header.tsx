@@ -1,5 +1,5 @@
 import { formatVotes, ratingLevel } from "@/lib/rating";
-import { RatingIcon } from "./rating-icon";
+import { RatingAchievementIcon, RATING_ACHIEVEMENT_NAMES } from "./rating-achievement-icon";
 
 type AppHeaderProps = {
   avgRating: number;
@@ -69,24 +69,26 @@ export function AppHeader({
   onPreferenceClick,
 }: AppHeaderProps) {
   const preferenceLabel = PREFERENCE_LABEL[preference ?? "all"];
+  const level = ratingLevel(avgRating);
+  const achievementName = votes > 0 ? RATING_ACHIEVEMENT_NAMES[level - 1] : "Menunggu rating";
 
   return (
     <header className="glass-panel z-30 flex shrink-0 items-center justify-between rounded-2xl p-3">
-      <div className="flex items-center gap-3">
-        <div
-          aria-hidden="true"
-          className="flex size-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-slate-950/70 shadow-lg shadow-slate-950/40"
-        >
-          <RatingIcon level={ratingLevel(avgRating)} className="size-7" />
-        </div>
-        <div>
+      <div className="flex min-w-0 items-center gap-2">
+        <RatingAchievementIcon
+          level={level}
+          earned={votes > 0}
+          className="size-11 shrink-0 drop-shadow-md"
+        />
+        <div className="min-w-0">
           <div className="flex items-baseline gap-1.5">
             <span className="text-base font-extrabold leading-none tracking-wide text-amber-400">
               {avgRating.toFixed(1)}
             </span>
             <span className="text-xs font-medium text-slate-400">/ 10.0</span>
           </div>
-          <p className="text-[10px] font-medium text-slate-400">{formatVotes(votes)}</p>
+          <p className="truncate text-[9px] font-bold leading-tight text-amber-200">{achievementName}</p>
+          <p className="truncate text-[9px] font-medium leading-tight text-slate-400">{formatVotes(votes)}</p>
         </div>
       </div>
 
