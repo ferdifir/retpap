@@ -91,6 +91,8 @@ export function PapRater() {
   const flipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipe = useRef({ startY: 0, active: false, moved: false });
+  /** A pinch is in progress on the active card: swiping would fight the zoom. */
+  const zoomLocked = useRef(false);
   const photosRef = useRef<FeedPhoto[] | null>(null);
   const sharedSlugRef = useRef<string | null>(null);
 
@@ -634,11 +636,15 @@ export function PapRater() {
   const handleSwipeStart = (event: PointerEvent<HTMLElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     notePointerInput();
+    if (zoomLocked.current) {
+      swipe.current.active = false;
+      return;
+    }
     swipe.current = { startY: event.clientY, active: true, moved: false };
   };
 
   const handleSwipeMove = (event: PointerEvent<HTMLElement>) => {
-    if (!swipe.current.active) return;
+    if (zoomLocked.current || !swipe.current.active) return;
     if (Math.abs(event.clientY - swipe.current.startY) > SWIPE_ACTIVATION_PX) {
       swipe.current.moved = true;
     }
@@ -646,7 +652,7 @@ export function PapRater() {
 
   const handleSwipeEnd = (event: PointerEvent<HTMLElement>) => {
     const state = swipe.current;
-    if (!state.active) return;
+    if (zoomLocked.current || !state.active) return;
 
     swipe.current.active = false;
     if (!state.moved) return;
@@ -657,7 +663,7 @@ export function PapRater() {
   };
 
   const handleTouchSwipeStart = (event: TouchEvent<HTMLElement>) => {
-    if (isTouchEcho()) return;
+    if (isTouchEcho() || zoomLocked.current) return;
 
     const touch = event.touches[0];
     if (!touch || event.touches.length > 1) return;
@@ -666,7 +672,7 @@ export function PapRater() {
   };
 
   const handleTouchSwipeMove = (event: TouchEvent<HTMLElement>) => {
-    if (!swipe.current.active) return;
+    if (zoomLocked.current || !swipe.current.active) return;
 
     const touch = event.touches[0];
     if (!touch) return;
@@ -678,7 +684,7 @@ export function PapRater() {
 
   const handleTouchSwipeEnd = (event: TouchEvent<HTMLElement>) => {
     const state = swipe.current;
-    if (!state.active) return;
+    if (zoomLocked.current || !state.active) return;
 
     swipe.current.active = false;
     if (!state.moved) return;

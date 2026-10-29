@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SyntheticEvent } from "react";
+import type { CSSProperties, SyntheticEvent } from "react";
 import { PlayIcon, VolumeOffIcon, VolumeOnIcon } from "@/components/icons";
 
 type VideoSurfaceProps = {
@@ -14,6 +14,8 @@ type VideoSurfaceProps = {
   suspended: boolean;
   /** Reports the real video size, used to correct rotated uploads. */
   onIntrinsicSize?: (width: number, height: number) => void;
+  /** Pinch-zoom transform, applied to the video only (controls stay put). */
+  mediaStyle?: CSSProperties;
 };
 
 function formatDuration(seconds: number): string {
@@ -28,6 +30,7 @@ export function VideoSurface({
   active,
   suspended,
   onIntrinsicSize,
+  mediaStyle,
 }: VideoSurfaceProps) {
   const ref = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
@@ -112,6 +115,7 @@ export function VideoSurface({
           setCurrentTime(event.currentTarget.currentTime);
         }}
         className="pointer-events-none absolute inset-0 size-full select-none object-contain"
+        style={mediaStyle}
       />
 
       {active ? (

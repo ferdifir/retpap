@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, TouchEvent } from "react";
 import { ChevronDownIcon, ChevronUpIcon } from "@/components/icons";
 import { useImageBox } from "@/hooks/use-image-box";
+import { usePinchZoom } from "@/hooks/use-pinch-zoom";
 import { track } from "@/lib/analytics/track";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { setNsfwReveal, useNsfwReveal } from "@/lib/nsfw";
@@ -51,6 +52,8 @@ type PapCardProps = {
   onRatingBlur: () => void;
   onPrevious: () => void;
   onNext: () => void;
+  /** Lets the deck lock swiping while a pinch is in progress. */
+  onZoomChange?: (zoomed: boolean) => void;
 };
 
 const TRANSFORMS: Record<CardPosition, string> = {
@@ -80,6 +83,7 @@ export function PapCard({
   onRatingBlur,
   onPrevious,
   onNext,
+  onZoomChange,
 }: PapCardProps) {
   const isActive = position === "active";
   const [ripple, setRipple] = useState<RippleState | null>(null);
@@ -104,11 +108,24 @@ export function PapCard({
   const longFired = useRef(false);
   const pressOrigin = useRef<{ x: number; y: number } | null>(null);
   const commentRequest = useRef(0);
+  // A pinch just happened: the touch fallback must not treat its release as a tap.
+  const pinched = useRef(false);
   const photoRef = useRef<HTMLDivElement>(null);
   const box = useImageBox(photoRef, mediaSize.width, mediaSize.height);
 
   const nsfwHidden = item.isNsfw && !nsfwGlobal && !nsfwHere;
-  const reactionsVisible = showReactions && !nsfwHidden;
+
+  // Zoom is a magnifier: it only exists while two fingers are down, so the
+  // reaction layer comes back the moment they lift.
+  const pinch = usePinchZoom({
+    maxScale: item.mediaType === "video" ? 3 : 4,
+    // A rating drag already owns the pointer; pinching mid-drag would commit a
+    // stray score when the first finger lifts.
+    enabled: isActive && !nsfwHidden && !ratingDragging,
+    onZoomChange,
+  });
+
+  const reactionsVisible = showReactions && !nsfwHidden && !pinch.zoomed;
 
   const handleIntrinsicSize = useCallback((width: number, height: number) => {
     setMediaSize((current) =>
@@ -310,15 +327,36 @@ export function PapCard({
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     notePointerInput();
+
+    if (pinch.handlers.onPointerDown(event)) {
+      // Second finger: drop the tap/long-press gesture for the pinch.
+      pinched.current = true;
+      tapStart.current = null;
+      touchTapStart.current = null;
+      clearPress();
+      closePanel();
+      return;
+    }
+
+    pinched.current = false;
     tapStart.current = { x: event.clientX, y: event.clientY };
     startPress(event.clientX, event.clientY);
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    pinch.handlers.onPointerMove(event);
     movePress(event.clientX, event.clientY);
   };
 
   const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const wasZoomed = pinch.zoomed;
+    pinch.handlers.onPointerUp(event);
+    if (wasZoomed) {
+      tapStart.current = null;
+      clearPress();
+      return;
+    }
+
     const start = tapStart.current;
     tapStart.current = null;
     if (!start) return;
@@ -333,7 +371,7 @@ export function PapCard({
   };
 
   const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
-    if (isTouchEcho()) return;
+    if (isTouchEcho() || pinched.current || event.touches.length > 1) return;
 
     const touch = event.touches[0];
     if (!touch) return;
@@ -343,12 +381,13 @@ export function PapCard({
   };
 
   const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    if (pinched.current) return;
     const touch = event.touches[0];
     if (touch) movePress(touch.clientX, touch.clientY);
   };
 
   const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
-    if (isTouchEcho()) return;
+    if (isTouchEcho() || pinched.current) return;
 
     const start = touchTapStart.current;
     touchTapStart.current = null;
@@ -383,6 +422,16 @@ export function PapCard({
     ? Math.max(panelHalf, Math.min(frameWidth - panelHalf, box.left + interaction.xPct * box.width))
     : 0;
   const panelY = interaction ? box.top + interaction.yPct * box.height : 0;
+
+  // Scaling about the pinch midpoint keeps the point under the fingers fixed.
+  // The container is untouched, so useImageBox and toPct stay valid.
+  const mediaStyle =
+    pinch.zoom.scale > 1
+      ? {
+          transform: "scale(" + pinch.zoom.scale + ")",
+          transformOrigin: pinch.zoom.ox + "px " + pinch.zoom.oy + "px",
+        }
+      : undefined;
 
   return (
     <article
@@ -423,6 +472,7 @@ export function PapCard({
               active={isActive}
               suspended={interaction !== null || ratingDragging}
               onIntrinsicSize={handleIntrinsicSize}
+              mediaStyle={mediaStyle}
             />
           ) : (
             <Image
@@ -432,6 +482,7 @@ export function PapCard({
               sizes="(max-width: 640px) 100vw, 448px"
               preload={priority}
               className="pointer-events-none select-none object-contain"
+              style={mediaStyle}
             />
           )}
 
@@ -515,7 +566,7 @@ export function PapCard({
               role="button"
               tabIndex={isActive ? 0 : -1}
               aria-label="Tap untuk reaksi emoji, tahan untuk komentar"
-              className="absolute inset-0 z-10 cursor-pointer touch-manipulation outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400"
+              className="absolute inset-0 z-10 cursor-pointer touch-none outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
