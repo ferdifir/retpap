@@ -12,7 +12,10 @@
  *   TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL_ID, NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
  *   MORNING_START/END  window pagi WIB, default 7 / 12
  *   UPLOAD_START/END   jam upload WIB, default 7 / 23 (tidak ada upload tengah malam)
- *   MIN_GAP_MINUTES    jeda minimum antar-upload, default 180
+ *   GAP_MIN_MINUTES    jeda minimum antar-upload dalam menit, default 90
+ *   GAP_MAX_MINUTES    jeda maksimum antar-upload dalam menit, default 300
+ *   START_MIN          menit slot pertama hari itu (WIB), default 420 (07:00)
+ *   START_MAX          menit slot pertama maksimum (WIB), default 540 (09:00)
  *   MAX_PER_DAY        kuota harian, default 3
  *   MAX_PER_RUN        foto per eksekusi, default 1 (biar spread)
  *   UPLOAD_GENDER      label konten terjadwal: female (default) atau male
@@ -47,8 +50,12 @@ const MAX_PER_RUN = Number(process.env.MAX_PER_RUN ?? 1);
 /** Jam upload: kuota harian tidak lagi habis di menit-menit awal. */
 const UPLOAD_START = Number(process.env.UPLOAD_START ?? 7);
 const UPLOAD_END = Number(process.env.UPLOAD_END ?? 23);
-/** Jarak minimum antar-upload supaya konten tersebar, bukan menumpuk. */
-const MIN_GAP_MINUTES = Number(process.env.MIN_GAP_MINUTES ?? 180);
+/** Jeda antar-upload diacak dalam rentang ini supaya polanya tak terbaca. */
+const GAP_MIN_MINUTES = Number(process.env.GAP_MIN_MINUTES ?? 90);
+const GAP_MAX_MINUTES = Number(process.env.GAP_MAX_MINUTES ?? 300);
+/** Slot pertama hari itu diacak dalam rentang menit WIB ini (07:00-09:00). */
+const START_MIN = Number(process.env.START_MIN ?? 420);
+const START_MAX = Number(process.env.START_MAX ?? 540);
 /** Folder inbox is treated as one gender; override with UPLOAD_GENDER=male. */
 const UPLOAD_GENDER: "female" | "male" = process.env.UPLOAD_GENDER === "male" ? "male" : "female";
 const ALLOWED_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".mp4", ".webm"]);
@@ -80,6 +87,26 @@ function wibNow(): { date: string; hour: number; minute: number } {
 }
 function clockLabel(hour: number, minute: number): string {
   return String(hour).padStart(2, "0") + ":" + String(minute).padStart(2, "0");
+}
+/** Bilangan bulat acak inklusif; dipakai untuk jeda dan slot pertama. */
+function randomInt(min: number, max: number): number {
+  const lo = Math.ceil(Math.min(min, max));
+  const hi = Math.floor(Math.max(min, max));
+  if (hi <= lo) return lo;
+  return lo + Math.floor(Math.random() * (hi - lo + 1));
+}
+/** Timestamp absolut untuk jam dinding WIB pada tanggal YYYY-MM-DD. */
+function wibTimestamp(date: string, minutesOfDay: number): number {
+  const [year, month, day] = date.split("-").map(Number);
+  return Date.UTC(year, month - 1, day, 0, minutesOfDay) - 7 * 60 * 60_000;
+}
+/** Label jam:menit WIB dari sebuah timestamp ISO. */
+function wibClock(iso: string): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
+  return pick("hour") + ":" + pick("minute");
 }
 function collapse(s: string): string {
   return s.replace(/(.)\1+/g, "$1");
@@ -153,6 +180,8 @@ interface State {
   uploaded: Record<string, string>;
   /** ISO time of the last successful upload; missing in older state files. */
   lastUploadAt?: string | null;
+  /** ISO time of the next allowed upload; randomised after every run. */
+  nextUploadAt?: string | null;
 }
 function loadState(): State {
   try {
@@ -183,7 +212,8 @@ async function buildVideoPoster(video: Buffer): Promise<Poster | null> {
   }
 }
 
-async function uploadOne(file: string): Promise<void> {
+/** Returns true when the content is visible to users (channel post succeeded). */
+async function uploadOne(file: string): Promise<boolean> {
   const full = path.join(INBOX_DIR, file);
   const bytes = await readFile(full);
   const ext = path.extname(file).toLowerCase();
@@ -203,7 +233,7 @@ async function uploadOne(file: string): Promise<void> {
     // Batas ukuran sama dengan flow bot (20 MB); file lebih besar dilewati.
     if (bytes.length > 20 * 1024 * 1024) {
       console.error("[upload] video terlalu besar (" + Math.round(bytes.length / (1024 * 1024)) + " MB), skip: " + file);
-      return;
+      return false;
     }
     slug = await saveVideo(bytes);
     imageUrl = videoUrl(slug);
@@ -225,7 +255,7 @@ async function uploadOne(file: string): Promise<void> {
       imageHeight = probe.height;
     } else {
       console.error("[upload] tidak bisa baca dimensi video, skip: " + file);
-      return;
+      return false;
     }
 
     // Schema only accepts duration null or 1..60; clamp anything else.
@@ -254,6 +284,9 @@ async function uploadOne(file: string): Promise<void> {
     isNsfw: false,
     gender: UPLOAD_GENDER,
   });
+
+  // Tanpa channel, konten tetap dianggap tayang (tidak ada post yang bisa gagal).
+  let posted = !channelConfigured();
 
   if (channelConfigured()) {
     try {
@@ -293,12 +326,21 @@ async function uploadOne(file: string): Promise<void> {
         });
       }
 
-      if (message) await markChannelPost(photoId, message.message_id);
+      if (message) {
+        await markChannelPost(photoId, message.message_id);
+        posted = true;
+      }
     } catch (error) {
       console.error("[channel] post failed for", slug, error);
     }
   }
-  console.log("[upload] " + file + " -> " + slug + " (" + mediaType + ")" + (DRY_RUN ? " (DRY_RUN)" : ""));
+  console.log(
+    "[upload] " + file + " -> " + slug + " (" + mediaType + ")" +
+      (DRY_RUN ? " (DRY_RUN)" : "") +
+      (posted ? "" : " (channel gagal, kuota tidak dipakai)"),
+  );
+
+  return posted;
 }
 
 async function main(): Promise<void> {
@@ -321,6 +363,10 @@ async function main(): Promise<void> {
   if (state.date !== dateToday) {
     state.date = dateToday;
     state.count = 0;
+    // Slot pertama hari itu diacak 07:00-09:00 WIB, termasuk menitnya.
+    const startMinute = randomInt(START_MIN, START_MAX);
+    state.nextUploadAt = new Date(wibTimestamp(dateToday, startMinute)).toISOString();
+    console.log("[run] slot pertama hari ini " + clockLabel(Math.floor(startMinute / 60), startMinute % 60) + " WIB");
   }
   const remaining = MAX_PER_DAY - state.count;
   if (remaining <= 0) {
@@ -337,15 +383,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Sebar upload: tolak kalau belum lewat jeda minimum sejak upload terakhir.
-  const lastUploadAt = state.lastUploadAt ? Date.parse(state.lastUploadAt) : NaN;
-  if (Number.isFinite(lastUploadAt)) {
-    const waitMinutes = Math.ceil((lastUploadAt + MIN_GAP_MINUTES * 60_000 - Date.now()) / 60_000);
-    if (waitMinutes > 0) {
-      console.log("[run] jeda minimum " + MIN_GAP_MINUTES + " menit belum lewat, tunggu " + waitMinutes + " menit lagi");
-      await saveState(state);
-      return;
-    }
+  // Jeda diacak tiap kali upload, jadi post di channel tidak berpola.
+  const nextAt = state.nextUploadAt ? Date.parse(state.nextUploadAt) : NaN;
+  if (Number.isFinite(nextAt) && Date.now() < nextAt) {
+    const waitMinutes = Math.ceil((nextAt - Date.now()) / 60_000);
+    console.log("[run] jadwal berikutnya " + wibClock(state.nextUploadAt as string) + " WIB, tunggu " + waitMinutes + " menit");
+    await saveState(state);
+    return;
   }
 
   let entries: string[];
@@ -391,14 +435,21 @@ async function main(): Promise<void> {
   }
 
   const toUpload = pool.slice(0, Math.min(MAX_PER_RUN, remaining));
-  console.log("[run] kandidat=" + candidates.length + " pool=" + pool.length + " akan upload=" + toUpload.length + " sisa kuota=" + (remaining - toUpload.length));
+  console.log("[run] kandidat=" + candidates.length + " pool=" + pool.length + " akan upload=" + toUpload.length + " sisa kuota=" + remaining);
 
   for (const c of toUpload) {
     if (!DRY_RUN) {
-      await uploadOne(c.file);
+      const posted = await uploadOne(c.file);
+      // File tetap ditandai sudah dipakai walau post gagal: mengulang file yang
+      // sama hanya akan membuat baris foto duplikat di DB.
       state.uploaded[c.key] = dateToday;
-      state.count += 1;
       state.lastUploadAt = new Date().toISOString();
+      if (posted) state.count += 1;
+      // Jeda berikutnya dihitung dari sini, bukan dari jadwal sebelumnya, supaya
+      // jarak yang terlihat di channel benar-benar acak.
+      const gap = randomInt(GAP_MIN_MINUTES, GAP_MAX_MINUTES);
+      state.nextUploadAt = new Date(Date.now() + gap * 60_000).toISOString();
+      console.log("[run] upload berikutnya " + wibClock(state.nextUploadAt) + " WIB (+" + gap + " menit)");
       await saveState(state);
     } else {
       console.log("[dry-run] akan upload: " + c.file + (c.morning ? " (pagi)" : " (biasa)"));
