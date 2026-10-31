@@ -37,6 +37,20 @@ type AdminUser = {
   uploadBlockedReason: string | null;
 };
 
+type AdminReport = {
+  id: number;
+  photoId: number;
+  slug: string;
+  caption: string;
+  mediaType: "photo" | "video";
+  isActive: boolean;
+  body: string;
+  createdAt: string;
+  reporterTelegramId: number | null;
+  reporterUsername: string | null;
+  reporterFirstName: string | null;
+};
+
 type AdminAction = {
   id: number;
   actorTelegramId: number;
@@ -49,7 +63,7 @@ type AdminAction = {
 
 type Page<T> = { rows: T[]; total: number; page: number; perPage: number };
 
-type Tab = "photos" | "users" | "log";
+type Tab = "photos" | "reports" | "users" | "log";
 
 const PER_PAGE = 25;
 
@@ -118,6 +132,8 @@ export function AdminPanel() {
   const [userPage, setUserPage] = useState(1);
   const [users, setUsers] = useState<Page<AdminUser> | null>(null);
 
+  const [reports, setReports] = useState<AdminReport[] | null>(null);
+
   const [actions, setActions] = useState<AdminAction[]>([]);
   const [confirm, setConfirm] = useState<{ kind: "hard" | "purge"; id: number } | null>(null);
   const [reasonDraft, setReasonDraft] = useState<Record<number, string>>({});
@@ -147,6 +163,13 @@ export function AdminPanel() {
     if (!response.ok) throw new Error("gagal memuat user");
     return (await response.json()) as Page<AdminUser>;
   }, [userQ, blocked, hasUpload, userPage]);
+
+  const fetchReports = useCallback(async () => {
+    const response = await fetch("/api/admin/reports?limit=50");
+    if (!response.ok) throw new Error("gagal memuat laporan");
+    const body = (await response.json()) as { rows: AdminReport[] };
+    return body.rows;
+  }, []);
 
   const fetchActions = useCallback(async () => {
     const response = await fetch("/api/admin/actions?limit=40");
@@ -190,6 +213,23 @@ export function AdminPanel() {
   }, [tab, fetchUsers]);
 
   useEffect(() => {
+    if (tab !== "reports") return;
+    let cancelled = false;
+
+    fetchReports()
+      .then((rows) => {
+        if (!cancelled) setReports(rows);
+      })
+      .catch((error: Error) => {
+        if (!cancelled) setMessage({ ok: false, text: error.message });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, fetchReports]);
+
+  useEffect(() => {
     if (tab !== "log") return;
     let cancelled = false;
 
@@ -223,6 +263,7 @@ export function AdminPanel() {
       }
 
       if (tab === "photos") setPhotos(await fetchPhotos());
+      if (tab === "reports") setReports(await fetchReports());
       if (tab === "users") setUsers(await fetchUsers());
       if (tab === "log") setActions(await fetchActions());
     } catch (error) {
@@ -317,6 +358,7 @@ export function AdminPanel() {
         {(
           [
             ["photos", "Konten"],
+            ["reports", "Laporan"],
             ["users", "User"],
             ["log", "Log"],
           ] as [Tab, string][]
@@ -552,6 +594,51 @@ export function AdminPanel() {
               Berikutnya →
             </button>
           </div>
+        </section>
+      ) : null}
+
+      {tab === "reports" ? (
+        <section className="space-y-2">
+          {reports === null ? (
+            <p className="py-6 text-center text-[11px] text-slate-500">Memuat…</p>
+          ) : reports.length === 0 ? (
+            <p className="py-6 text-center text-[11px] text-slate-500">Belum ada laporan.</p>
+          ) : (
+            reports.map((report) => (
+              <article
+                key={report.id}
+                className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-2.5"
+              >
+                <div className="flex gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={"/media/" + report.slug + ".jpg"}
+                    alt=""
+                    className="size-14 shrink-0 rounded-lg object-cover"
+                  />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="line-clamp-2 text-[11px] font-bold text-slate-100">
+                      {report.caption}
+                    </p>
+                    <p className="text-[9.5px] text-slate-500">
+                      PAP #{report.photoId} · {report.mediaType} · {time(report.createdAt)}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {report.isActive ? null : <Badge tone="amber">nonaktif</Badge>}
+                      <Badge>
+                        {report.reporterUsername
+                          ? "@" + report.reporterUsername
+                          : (report.reporterFirstName ?? "tanpa user")}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+                <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] whitespace-pre-wrap text-amber-100">
+                  {report.body}
+                </p>
+              </article>
+            ))
+          )}
         </section>
       ) : null}
 

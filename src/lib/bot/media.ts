@@ -9,11 +9,10 @@ const SLUG_PATTERN = /^[A-Za-z0-9_-]{10,24}$/;
 /**
  * Channel teaser blur. Strong enough to hide details but keeps the silhouette
  * readable, which is what makes people open the app to see the real photo.
+ * The same strength is used for 18+ and non-18+ media: the badge, not the blur,
+ * is what marks a post as 18+.
  */
-const CHANNEL_BLUR_SIGMA = 22;
-
-/** 18+ teasers get a stronger blur so the frame is not readable at all. */
-const NSFW_BLUR_SIGMA = 32;
+const CHANNEL_BLUR_SIGMA = 32;
 
 /** Keeps the channel upload small; Telegram rejects huge dimensions anyway. */
 const CHANNEL_MAX_DIMENSION = 1600;
@@ -95,10 +94,7 @@ export async function savePoster(slug: string, bytes: Buffer): Promise<void> {
  * Creates the blurred copy that goes to the channel. The feed and the uploader
  * always keep the original; this variant exists only as a teaser.
  */
-export async function blurPhoto(
-  bytes: Buffer,
-  options: { nsfw?: boolean } = {},
-): Promise<Buffer> {
+export async function blurPhoto(bytes: Buffer): Promise<Buffer> {
   return sharp(bytes, { failOn: "none" })
     .rotate()
     .resize({
@@ -107,7 +103,7 @@ export async function blurPhoto(
       fit: "inside",
       withoutEnlargement: true,
     })
-    .blur(options.nsfw ? NSFW_BLUR_SIGMA : CHANNEL_BLUR_SIGMA)
+    .blur(CHANNEL_BLUR_SIGMA)
     .jpeg({ quality: 82, mozjpeg: true })
     .toBuffer();
 }
@@ -116,10 +112,7 @@ export async function blurPhoto(
  * Blurred video cover for the channel. Blur happens at full size first, then
  * the result is downscaled, so the perceived strength matches blurred photos.
  */
-export async function blurredThumbnail(
-  bytes: Buffer,
-  options: { nsfw?: boolean } = {},
-): Promise<Buffer> {
+export async function blurredThumbnail(bytes: Buffer): Promise<Buffer> {
   return sharp(bytes, { failOn: "none" })
     .rotate()
     .resize({
@@ -128,7 +121,7 @@ export async function blurredThumbnail(
       fit: "inside",
       withoutEnlargement: true,
     })
-    .blur(options.nsfw ? NSFW_BLUR_SIGMA : CHANNEL_BLUR_SIGMA)
+    .blur(CHANNEL_BLUR_SIGMA)
     .resize({
       width: CHANNEL_THUMBNAIL_DIMENSION,
       height: CHANNEL_THUMBNAIL_DIMENSION,

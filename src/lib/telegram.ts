@@ -112,12 +112,17 @@ export function initTelegram(): void {
   const markFullscreen = (on: boolean) => {
     document.documentElement.dataset.tgFullscreen = on ? "true" : "false";
   };
-  markFullscreen(Boolean(webApp.isFullscreen));
+  const syncFullscreen = () => markFullscreen(Boolean(webApp.isFullscreen));
+  syncFullscreen();
   webApp.onEvent?.("fullscreenChanged", () => {
-    markFullscreen(Boolean(webApp.isFullscreen));
+    syncFullscreen();
     applySafeArea(webApp);
   });
-  webApp.onEvent?.("fullscreenFailed", () => markFullscreen(false));
+  // `ALREADY_FULLSCREEN` is a success, not a failure: the SDK flips
+  // isFullscreen to true and then fires this event, so read the live value
+  // instead of forcing the flag off.
+  webApp.onEvent?.("fullscreenFailed", syncFullscreen);
+  webApp.onEvent?.("activated", syncFullscreen);
 
   // Older clients expose these methods but throw WebAppMethodUnsupported when
   // called. A browser preview loads the same SDK at version 6.0, so every
@@ -131,6 +136,8 @@ export function initTelegram(): void {
   };
 
   attempt(() => webApp.requestFullscreen?.());
+  // That path emits nothing else, so re-read once the client has answered.
+  setTimeout(syncFullscreen, 0);
   // Telegram Android otherwise swallows vertical drags to minimise the app.
   attempt(() => webApp.disableVerticalSwipes?.());
   attempt(() => webApp.setHeaderColor?.("#0b0f19"));

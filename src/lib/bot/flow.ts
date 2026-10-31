@@ -1,14 +1,21 @@
-import { readFile } from "node:fs/promises";
 import {
-  deactivatePhoto,
+  claimMonthlyReward,
+  getMonthlyReward,
   isUploadBlocked,
   markBotStarted,
   markChannelPost,
-  markPhotoNsfw,
   setNotifyByTelegram,
+  toggleAnonymousByTelegram,
   toggleNotifyByTelegram,
   upsertUser,
 } from "@/db/queries";
+import {
+  clearReportSession,
+  createReport,
+  getReportSession,
+  getReportTarget,
+  saveReportSession,
+} from "@/db/reports";
 import {
   clearUploadSession,
   createPhoto,
@@ -16,16 +23,19 @@ import {
   saveUploadSession,
   type ContentGender,
   type MediaType,
+  type UploadSession,
 } from "@/db/upload";
 import { HOW_TO_NOTE, HOW_TO_TIPS } from "@/lib/how-to";
+import { leaderboardWindow, WIB_TIME_ZONE } from "@/lib/leaderboard-period";
 import { recordEvent } from "@/lib/analytics/record";
-import { shareUrlFor, statsUrl, uploadUrl } from "@/lib/share";
+import { adminUrl, shareUrlFor, statsUrl, uploadUrl } from "@/lib/share";
 import type { TelegramUser } from "@/types/telegram";
 import {
   answerCallbackQuery,
   deleteMessage,
   downloadFile,
   editMessageCaption,
+  editMessageText,
   getFile,
   sendMessage,
   sendPhoto,
@@ -45,6 +55,12 @@ import {
   videoUrl,
 } from "./media";
 import { overlayNsfwBadge } from "./nsfw-badge";
+import {
+  rewardClaimOwnerNotice,
+  rewardClaimText,
+  rewardNotEligibleText,
+} from "./format";
+import { enqueueUpload, removeQueued } from "./queue";
 import type { BotMessage, BotUpdate, InlineKeyboardMarkup } from "./types";
 import { extractPoster, extractTeaser, matchAspect, normalisePoster, type Poster } from "./video";
 
@@ -76,7 +92,21 @@ function openAppKeyboard(slug?: string): InlineKeyboardMarkup {
   return { inline_keyboard: [[{ text: "Buka RetPAP", web_app: { url: appUrl() } }]] };
 }
 
-function confirmKeyboard(): InlineKeyboardMarkup {
+/**
+ * Owner picks between publishing now and joining the scheduled queue; everyone
+ * else only ever publishes immediately.
+ */
+function confirmKeyboard(isOwner: boolean): InlineKeyboardMarkup {
+  if (isOwner) {
+    return {
+      inline_keyboard: [
+        [{ text: "✅ Upload sekarang", callback_data: "publish" }],
+        [{ text: "🕒 Masuk antrean", callback_data: "publish:queue" }],
+        [{ text: "✕ Batal", callback_data: "cancel" }],
+      ],
+    };
+  }
+
   return {
     inline_keyboard: [
       [
@@ -137,7 +167,7 @@ export async function postToChannel(
     keyboard: {
       inline_keyboard: [
         [
-          { text: "Kasih rating", url: shareUrlFor(media.slug) },
+          { text: "Lihat versi jelas", url: shareUrlFor(media.slug) },
           { text: "Upload", url: uploadUrl() },
         ],
       ],
@@ -168,7 +198,7 @@ export async function postToChannel(
 
         if (media.poster) {
           try {
-            thumbnail = await blurredThumbnail(media.poster.bytes, { nsfw: isNsfw });
+            thumbnail = await blurredThumbnail(media.poster.bytes);
             if (isNsfw) thumbnail = await overlayNsfwBadge(thumbnail);
           } catch (error) {
             console.error("[bot] channel thumbnail blur failed", error);
@@ -198,7 +228,7 @@ export async function postToChannel(
 
       try {
         if (media.bytes) {
-          blurred = await blurPhoto(media.bytes, { nsfw: isNsfw });
+          blurred = await blurPhoto(media.bytes);
           if (isNsfw) blurred = await overlayNsfwBadge(blurred);
         }
       } catch (error) {
@@ -209,9 +239,10 @@ export async function postToChannel(
       if (blurred) {
         message = await sendPhotoFile(channelId(), blurred, options);
       } else if (media.fileId) {
+        // The original is never posted unblurred, 18+ or not.
         message = await sendPhoto(channelId(), media.fileId, {
           ...options,
-          spoiler: isNsfw,
+          spoiler: true,
         });
       } else if (media.bytes) {
         message = await sendPhotoFile(channelId(), media.bytes, {
@@ -229,123 +260,21 @@ export async function postToChannel(
   }
 }
 
-/** Sends the fresh upload to the owner with delete and 18+ actions. */
-async function notifyOwner(
-  photoId: number,
-  fileId: string,
-  mediaType: MediaType,
-  caption: string,
-  isNsfw: boolean,
-): Promise<void> {
-  const ownerId = ownerTelegramId();
-  if (ownerId === null) return;
-
-  const buttons = [{ text: "Hapus", callback_data: "del:" + photoId }];
-  if (!isNsfw) buttons.push({ text: "18+", callback_data: "nsfw:" + photoId });
-
-  const options = {
-    caption: escapeHtml(caption),
-    keyboard: { inline_keyboard: [buttons] },
-  };
-
-  try {
-    if (mediaType === "video") {
-      await sendVideo(ownerId, fileId, options);
-    } else {
-      await sendPhoto(ownerId, fileId, options);
-    }
-  } catch (error) {
-    console.error("[bot] owner notification failed", error);
-  }
-}
-
-/**
- * Owner action: mark an upload 18+, then rebuild its channel post with the
- * stronger blur and badge. The DB flag is written first so a failed re-post
- * never leaves the feed showing unblurred content.
- */
-async function markNsfwAndRepost(
-  photoId: number,
-  chatId: number,
-  messageId: number,
-): Promise<void> {
-  const photo = await markPhotoNsfw(photoId);
-
-  if (!photo) {
-    await editMessageCaption(chatId, messageId, "Konten tidak ditemukan.");
-    return;
-  }
-
-  if (!photo.isActive) {
-    await editMessageCaption(chatId, messageId, "Konten sudah tidak aktif.");
-    return;
-  }
-
-  if (photo.wasNsfw) {
-    await editMessageCaption(chatId, messageId, escapeHtml(photo.caption) + "\n\nSudah ditandai 18+.");
-    return;
-  }
-
-  if (photo.channelMessageId !== null && channelConfigured()) {
-    await deleteMessage(channelId(), photo.channelMessageId).catch(() => undefined);
-  }
-
-  const file = mediaPath(photo.slug, photo.mediaType === "video" ? "mp4" : "jpg");
-  const bytes = file ? await readFile(file).catch(() => null) : null;
-
-  if (!bytes) {
-    await editMessageCaption(
-      chatId,
-      messageId,
-      escapeHtml(photo.caption) +
-        "\n\n✅ Ditandai 18+, tapi file tidak ditemukan untuk repost channel.",
-      { inline_keyboard: [[{ text: "Hapus", callback_data: "del:" + photoId }]] },
-    ).catch(() => undefined);
-    return;
-  }
-
-  await postToChannel(
-    photoId,
-    { mediaType: photo.mediaType, slug: photo.slug, bytes, poster: null },
-    photo.caption,
-    true,
-  );
-
-  await editMessageCaption(
-    chatId,
-    messageId,
-    escapeHtml(photo.caption) + "\n\n✅ Ditandai 18+.",
-    { inline_keyboard: [[{ text: "Hapus", callback_data: "del:" + photoId }]] },
-  ).catch(() => undefined);
-}
-
-/** Manual curation: hide the photo, drop the channel post, tell the uploader. */
-async function removePhoto(photoId: number, chatId: number, messageId: number): Promise<void> {
-  const removed = await deactivatePhoto(photoId);
-
-  if (!removed) {
-    await editMessageCaption(chatId, messageId, "Foto ini sudah tidak aktif.");
-    return;
-  }
-
-  if (removed.channelMessageId !== null && channelConfigured()) {
-    await deleteMessage(channelId(), removed.channelMessageId).catch(() => undefined);
-  }
-
-  if (removed.uploaderTelegramId !== null) {
-    await sendMessage(
-      removed.uploaderTelegramId,
-      "Fotomu dihapus dari RetPAP karena tidak sesuai ketentuan. Kamu masih bisa upload foto lain lewat /upload.",
-    ).catch(() => undefined);
-  }
-
-  await editMessageCaption(chatId, messageId, "Foto dihapus dari feed.");
-}
+/** Claim timestamps are always shown in Jakarta time. */
+const REWARD_DATE = new Intl.DateTimeFormat("id-ID", {
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: WIB_TIME_ZONE,
+});
 
 const START_TEXT = [
   "<b>RetPAP</b>",
   "",
   "Upload foto/video: /upload",
+  "Komentar tanpa nama: /anon",
+  "Hadiah Top PAP: /reward",
   "Cara pakai: /howto",
 ].join("\n");
 
@@ -413,7 +342,12 @@ function nsfwQuestionKeyboard(): InlineKeyboardMarkup {
   };
 }
 
-function confirmText(caption: string, gender: ContentGender, isNsfw: boolean): string {
+function confirmText(
+  caption: string,
+  gender: ContentGender,
+  isNsfw: boolean,
+  isOwner: boolean,
+): string {
   return [
     "<b>Konfirmasi upload</b>",
     "",
@@ -421,7 +355,9 @@ function confirmText(caption: string, gender: ContentGender, isNsfw: boolean): s
     "Konten: <b>" + (gender === "female" ? "Cewek" : "Cowok") + "</b>",
     "18+: <b>" + (isNsfw ? "Ya" : "Tidak") + "</b>",
     "",
-    "Upload sekarang? Konten akan muncul di feed dan bisa di-rating semua orang.",
+    isOwner
+      ? "Upload sekarang, atau masukkan ke antrean supaya tayang otomatis nanti?"
+      : "Upload sekarang? Konten akan muncul di feed dan bisa di-rating semua orang.",
   ].join("\n");
 }
 
@@ -447,6 +383,9 @@ async function canUpload(chatId: number, telegramId: number): Promise<boolean> {
 async function startUpload(chatId: number, telegramId: number): Promise<void> {
   if (!(await canUpload(chatId, telegramId))) return;
 
+  // One flow at a time: a new upload drops a pending report.
+  await clearReportSession(telegramId);
+
   await saveUploadSession({
     telegramId,
     step: "photo",
@@ -468,9 +407,66 @@ async function startUpload(chatId: number, telegramId: number): Promise<void> {
   await sendMessage(chatId, ASK_MEDIA_TEXT);
 }
 
-async function cancelUpload(chatId: number, telegramId: number): Promise<void> {
+/**
+ * /batal owns every flow: only the active one is cancelled, and an idle chat is
+ * told so instead of pretending an upload was in progress.
+ */
+async function cancelActiveFlow(chatId: number, telegramId: number): Promise<void> {
+  if (await getReportSession(telegramId)) {
+    await clearReportSession(telegramId);
+    await sendMessage(chatId, "Laporan dibatalkan.");
+    return;
+  }
+
+  const session = await getUploadSession(telegramId);
   await clearUploadSession(telegramId);
-  await sendMessage(chatId, "Upload dibatalkan.");
+  await sendMessage(chatId, session ? "Upload dibatalkan." : "Tidak ada yang bisa dibatalkan.");
+}
+
+/** Prefix of the `?start=` payload used by the feed report button. */
+const REPORT_START_PREFIX = "r_";
+
+/**
+ * The feed opens this deep link, so the report starts in the bot chat: the
+ * next plain text message becomes the body. No reason list, no rate limit.
+ */
+async function startReport(chatId: number, telegramId: number, payload: string): Promise<void> {
+  const photoId = Number(payload.slice(REPORT_START_PREFIX.length));
+  const target = await getReportTarget(photoId);
+
+  if (!target) {
+    await sendMessage(chatId, "Konten yang mau dilaporkan sudah tidak tersedia.");
+    return;
+  }
+
+  // One flow at a time: a report drops a pending upload.
+  await clearUploadSession(telegramId);
+  await saveReportSession(telegramId, target.id);
+  await sendMessage(
+    chatId,
+    [
+      "🚩 <b>Laporkan PAP #" + target.id + "</b>",
+      "",
+      "Caption: <i>" + escapeHtml(target.caption) + "</i>",
+      "",
+      "Tulis laporanmu dalam satu pesan. Ketik /batal untuk keluar.",
+    ].join("\n"),
+    { keyboard: { inline_keyboard: [[{ text: "✕ Batal", callback_data: "reportcancel" }]] } },
+  );
+}
+
+/** Owner only needs to know something came in; the details live in /admin. */
+async function notifyOwnerReport(photoId: number): Promise<void> {
+  const ownerId = ownerTelegramId();
+  if (ownerId === null) return;
+
+  try {
+    await sendMessage(ownerId, "📩 Ada laporan baru masuk untuk PAP #" + photoId + ".", {
+      keyboard: { inline_keyboard: [[{ text: "Buka admin", url: adminUrl() }]] },
+    });
+  } catch (error) {
+    console.error("[bot] report owner notice failed", error);
+  }
 }
 
 async function askGender(
@@ -510,10 +506,11 @@ async function showConfirmation(
   caption: string,
   gender: ContentGender,
   isNsfw: boolean,
+  isOwner: boolean,
 ): Promise<void> {
   const options = {
-    caption: confirmText(caption, gender, isNsfw),
-    keyboard: confirmKeyboard(),
+    caption: confirmText(caption, gender, isNsfw, isOwner),
+    keyboard: confirmKeyboard(isOwner),
   };
 
   if (mediaType === "video") {
@@ -525,6 +522,13 @@ async function showConfirmation(
 }
 
 async function handlePhoto(message: BotMessage, user: TelegramUser): Promise<void> {
+  // A pending report only accepts text; media would silently start an upload
+  // and lose the report target.
+  if (await getReportSession(user.id)) {
+    await sendMessage(message.chat.id, "Laporan berupa teks ya. Ketik /batal untuk keluar.");
+    return;
+  }
+
   if (!(await requireChannel(message.chat.id, user.id))) return;
   if (!(await canUpload(message.chat.id, user.id))) return;
 
@@ -577,6 +581,13 @@ async function handlePhoto(message: BotMessage, user: TelegramUser): Promise<voi
 }
 
 async function handleVideo(message: BotMessage, user: TelegramUser): Promise<void> {
+  // A pending report only accepts text; media would silently start an upload
+  // and lose the report target.
+  if (await getReportSession(user.id)) {
+    await sendMessage(message.chat.id, "Laporan berupa teks ya. Ketik /batal untuk keluar.");
+    return;
+  }
+
   if (!(await requireChannel(message.chat.id, user.id))) return;
   if (!(await canUpload(message.chat.id, user.id))) return;
 
@@ -676,6 +687,106 @@ async function handleCaption(chatId: number, user: TelegramUser, text: string): 
   await askGender(chatId, session.fileId, session.mediaType);
 }
 
+/**
+ * Monthly reward claim. One winner per month, claimable once, and only until
+ * the month ends. The conditional update inside claimMonthlyReward is what
+ * makes two simultaneous claims impossible.
+ */
+async function handleReward(chatId: number, user: TelegramUser): Promise<void> {
+  const window = leaderboardWindow("month");
+  const reward =
+    window.start === null ? null : await getMonthlyReward(window.start);
+
+  if (!reward) {
+    void recordEvent({ name: "reward_claim", telegramId: user.id, meta: { outcome: "not_announced" } });
+    await sendMessage(
+      chatId,
+      [
+        "🏆 <b>Top PAP bulan ini belum diumumkan.</b>",
+        "",
+        "Pemenang dan hadiahnya diumumkan lewat channel. Setelah itu baru bisa diklaim dengan /reward.",
+      ].join("\n"),
+    );
+    return;
+  }
+
+  // Eligibility comes before status: a stranger must never learn whether
+  // someone else already claimed, only who the prize belongs to.
+  if (reward.telegramId !== user.id) {
+    void recordEvent({
+      name: "reward_claim",
+      telegramId: user.id,
+      photoId: reward.photoId,
+      meta: { outcome: "not_winner" },
+    });
+    await sendMessage(chatId, rewardNotEligibleText(reward));
+    return;
+  }
+
+  if (reward.claimedAt !== null) {
+    void recordEvent({
+      name: "reward_claim",
+      telegramId: user.id,
+      photoId: reward.photoId,
+      meta: { outcome: "already_claimed" },
+    });
+    const when = REWARD_DATE.format(reward.claimedAt);
+    await sendMessage(
+      chatId,
+      "Hadiah bulan ini sudah kamu klaim (" + when + ") · " + reward.amount + " Stars.",
+    );
+    return;
+  }
+
+  if (Date.now() >= reward.periodEnd.getTime()) {
+    void recordEvent({
+      name: "reward_claim",
+      telegramId: user.id,
+      photoId: reward.photoId,
+      meta: { outcome: "closed" },
+    });
+    await sendMessage(chatId, "Klaim hadiah bulan ini sudah ditutup.");
+    return;
+  }
+
+  if (!(await claimMonthlyReward(reward.id, user.id))) {
+    void recordEvent({
+      name: "reward_claim",
+      telegramId: user.id,
+      photoId: reward.photoId,
+      meta: { outcome: "race_lost" },
+    });
+    await sendMessage(chatId, "Hadiah ini sudah diklaim.");
+    return;
+  }
+
+  void recordEvent({
+    name: "reward_claim",
+    telegramId: user.id,
+    photoId: reward.photoId,
+    meta: { outcome: "claimed" },
+  });
+  await sendMessage(chatId, rewardClaimText(reward));
+
+  const ownerId = ownerTelegramId();
+  if (ownerId !== null && ownerId !== user.id) {
+    await sendMessage(
+      ownerId,
+      rewardClaimOwnerNotice({
+        claimant: {
+          firstName: user.first_name,
+          username: user.username,
+          telegramId: user.id,
+        },
+        caption: reward.caption,
+        avgScore: reward.avgScore,
+        votes: reward.votes,
+        amount: reward.amount,
+      }),
+    ).catch(() => undefined);
+  }
+}
+
 async function handleText(message: BotMessage, user: TelegramUser): Promise<void> {
   const chatId = message.chat.id;
   const text = message.text?.trim() ?? "";
@@ -690,12 +801,37 @@ async function handleText(message: BotMessage, user: TelegramUser): Promise<void
       return;
     }
 
+    // The "Klaim hadiah" button on the monthly recap lands here.
+    if (payload === "reward") {
+      await handleReward(chatId, user);
+      return;
+    }
+
+    // The report button in the feed carries the photo id: "r_123".
+    if (payload.startsWith(REPORT_START_PREFIX)) {
+      await startReport(chatId, user.id, payload);
+      return;
+    }
+
     await sendMessage(chatId, START_TEXT, { keyboard: openAppKeyboard() });
     return;
   }
 
   if (command === "howto" || command === "help") {
     await sendMessage(chatId, HOWTO_TEXT, { keyboard: openAppKeyboard() });
+    return;
+  }
+
+  // Anonymous comments are a per-user toggle: the name is dropped from the
+  // comment itself and from the uploader's notification.
+  if (command === "anon") {
+    const anonymous = await toggleAnonymousByTelegram(user.id);
+    await sendMessage(
+      chatId,
+      anonymous
+        ? "🕶 <b>Mode anonim aktif.</b>\n\nKomentarmu tampil sebagai <b>Anonim</b>, dan notifikasi ke pemilik foto tidak menyebut namamu. Ketik /anon lagi untuk mematikan."
+        : "Mode anonim <b>mati</b>. Komentar barumu menampilkan namamu lagi.",
+    );
     return;
   }
 
@@ -706,7 +842,7 @@ async function handleText(message: BotMessage, user: TelegramUser): Promise<void
   }
 
   if (command === "batal" || command === "cancel") {
-    await cancelUpload(chatId, user.id);
+    await cancelActiveFlow(chatId, user.id);
     return;
   }
 
@@ -722,6 +858,11 @@ async function handleText(message: BotMessage, user: TelegramUser): Promise<void
     return;
   }
 
+  if (command === "reward") {
+    await handleReward(chatId, user);
+    return;
+  }
+
   if (command === "notif") {
     const enabled = await toggleNotifyByTelegram(user.id);
     await sendMessage(
@@ -730,6 +871,25 @@ async function handleText(message: BotMessage, user: TelegramUser): Promise<void
         ? "Notifikasi dinyalakan. Kamu akan dapat kabar saat kontenmu di-rating atau dikomentari."
         : "Notifikasi dimatikan. Ketik /notif lagi untuk menyalakan.",
     );
+    return;
+  }
+
+  const report = await getReportSession(user.id);
+
+  if (report) {
+    if (text.length === 0) {
+      await sendMessage(chatId, "Tulis laporanmu dalam satu pesan. Ketik /batal untuk keluar.");
+      return;
+    }
+
+    await createReport(user.id, report.photoId, text);
+    await clearReportSession(user.id);
+
+    const target = await getReportTarget(report.photoId);
+    await sendMessage(chatId, "✅ Laporan diterima. Tim akan meninjau konten ini.", {
+      keyboard: target ? openAppKeyboard(target.slug) : openAppKeyboard(),
+    });
+    await notifyOwnerReport(report.photoId);
     return;
   }
 
@@ -779,11 +939,19 @@ async function buildVideoPoster(video: Buffer, thumbnailFileId: string | null): 
   }
 }
 
-async function publish(chatId: number, messageId: number, user: TelegramUser): Promise<void> {
+/**
+ * Shared gate for both publish paths: ban, session completeness, and the two
+ * questions. Returns null when it already answered the chat.
+ */
+async function readySession(
+  chatId: number,
+  messageId: number,
+  user: TelegramUser,
+): Promise<UploadSession | null> {
   // A session can be older than the ban, so the final gate re-checks it.
   if (!(await canUpload(chatId, user.id))) {
     await clearUploadSession(user.id);
-    return;
+    return null;
   }
 
   const session = await getUploadSession(user.id);
@@ -797,18 +965,37 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
     !session.imageHeight
   ) {
     await editMessageCaption(chatId, messageId, "Sesi upload sudah tidak ada. Kirim /upload untuk mulai lagi.");
-    return;
+    return null;
   }
 
   if (session.gender === null) {
     await askGender(chatId, session.fileId, session.mediaType);
-    return;
+    return null;
   }
 
   if (session.isNsfw === null) {
     await askNsfw(chatId, session.fileId, session.mediaType);
+    return null;
+  }
+
+  return session;
+}
+
+async function publish(chatId: number, messageId: number, user: TelegramUser): Promise<void> {
+  const session = await readySession(chatId, messageId, user);
+  if (
+    !session ||
+    !session.fileId ||
+    !session.caption ||
+    !session.imageWidth ||
+    !session.imageHeight ||
+    session.gender === null ||
+    session.isNsfw === null
+  ) {
     return;
   }
+
+  const isNsfw = session.isNsfw;
 
   try {
     const file = await getFile(session.fileId);
@@ -871,7 +1058,7 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
       durationSeconds: session.durationSeconds,
       posterUrl,
       userId: owner.id,
-      isNsfw: session.isNsfw,
+      isNsfw,
       gender: session.gender,
     });
 
@@ -885,7 +1072,7 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
       meta: {
         media: session.mediaType,
         gender: session.gender,
-        nsfw: session.isNsfw,
+        nsfw: isNsfw,
       },
     });
 
@@ -896,7 +1083,7 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
       "✅ <b>" +
         label +
         " kamu sudah masuk feed.</b>\n\n" +
-        (session.isNsfw ? "18+: <b>Ya</b>\n" : "") +
+        (isNsfw ? "18+: <b>Ya</b>\n" : "") +
         "Caption: <i>" +
         escapeHtml(session.caption) +
         "</i>",
@@ -910,12 +1097,113 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
       photoId,
       { mediaType: session.mediaType, slug, fileId: session.fileId, bytes, poster },
       session.caption,
-      session.isNsfw,
+      isNsfw,
     );
-    await notifyOwner(photoId, session.fileId, session.mediaType, session.caption, session.isNsfw);
+    // Owner tidak lagi dapat DM per upload: kurasi lewat halaman admin.
   } catch (error) {
     console.error("[bot] publish failed", error);
     await editMessageCaption(chatId, messageId, "Gagal menyimpan konten. Kirim ulang dengan /upload.");
+  }
+}
+
+/** Preview of a queued upload for the owner, with a way to pull it back. */
+async function notifyQueued(
+  fileId: string,
+  mediaType: MediaType,
+  caption: string,
+  queueId: string,
+): Promise<void> {
+  const ownerId = ownerTelegramId();
+  if (ownerId === null) return;
+
+  const options = {
+    caption: "🕒 Antrean: " + escapeHtml(caption),
+    keyboard: { inline_keyboard: [[{ text: "Hapus dari antrean", callback_data: "qdel:" + queueId }]] },
+  };
+
+  try {
+    if (mediaType === "video") {
+      await sendVideo(ownerId, fileId, options);
+    } else {
+      await sendPhoto(ownerId, fileId, options);
+    }
+  } catch (error) {
+    console.error("[bot] queued notification failed", error);
+  }
+}
+
+/**
+ * Owner-only: park the upload in the inbox folder instead of publishing it.
+ * scheduled-upload.ts picks it up on the next random slot, so the file gets the
+ * same treatment as a manual inbox drop — no priority, one shared quota.
+ */
+async function enqueue(chatId: number, messageId: number, user: TelegramUser): Promise<void> {
+  if (user.id !== ownerTelegramId()) {
+    await editMessageCaption(chatId, messageId, "Antrean hanya untuk owner.");
+    return;
+  }
+
+  const session = await readySession(chatId, messageId, user);
+  if (!session || !session.fileId || !session.caption || session.gender === null) return;
+
+  try {
+    const file = await getFile(session.fileId);
+    if (!file.file_path) throw new Error("getFile returned no file_path");
+
+    const bytes = await downloadFile(file.file_path);
+
+    if (session.mediaType === "video" && bytes.byteLength > MAX_VIDEO_BYTES) {
+      await editMessageCaption(
+        chatId,
+        messageId,
+        "Videonya lebih dari 20 MB. Kirim versi yang lebih kecil dengan /upload.",
+      );
+      return;
+    }
+
+    const owner = await upsertUser({
+      telegramId: user.id,
+      firstName: user.first_name,
+      username: user.username,
+      lastName: user.last_name,
+      languageCode: user.language_code,
+    });
+
+    const queued = await enqueueUpload({
+      bytes,
+      caption: session.caption,
+      gender: session.gender,
+      isNsfw: session.isNsfw === true,
+      userId: owner.id,
+      telegramId: user.id,
+      mediaType: session.mediaType,
+    });
+
+    await clearUploadSession(user.id);
+
+    void recordEvent({
+      name: "upload_queued",
+      telegramId: user.id,
+      userId: owner.id,
+      meta: {
+        media: session.mediaType,
+        gender: session.gender,
+        nsfw: session.isNsfw === true,
+      },
+    });
+
+    await editMessageCaption(
+      chatId,
+      messageId,
+      "🕒 <b>Masuk antrean.</b>\n\nKonten tayang otomatis dalam beberapa jam.\n\nCaption: <i>" +
+        escapeHtml(session.caption) +
+        "</i>",
+    );
+
+    await notifyQueued(session.fileId, session.mediaType, session.caption, queued.id);
+  } catch (error) {
+    console.error("[bot] enqueue failed", error);
+    await editMessageCaption(chatId, messageId, "Gagal memasukkan ke antrean. Kirim ulang dengan /upload.");
   }
 }
 
@@ -926,32 +1214,21 @@ async function handleCallback(update: BotUpdate): Promise<void> {
   const chatId = query.message?.chat.id;
   const messageId = query.message?.message_id;
 
-  // Owner-only buttons: anyone who sees the message can press them otherwise.
-  if (query.data?.startsWith("del:")) {
-    const photoId = Number(query.data.slice(4));
-    if (query.from.id !== ownerTelegramId() || !Number.isInteger(photoId)) {
+  // Owner pulls a queued upload back out of the inbox folder.
+  if (query.data?.startsWith("qdel:")) {
+    if (query.from.id !== ownerTelegramId()) {
       await answerCallbackQuery(query.id, "Bukan untuk kamu").catch(() => undefined);
       return;
     }
 
     await answerCallbackQuery(query.id).catch(() => undefined);
     if (chatId !== undefined && messageId !== undefined) {
-      await removePhoto(photoId, chatId, messageId);
-    }
-    return;
-  }
-
-  // Owner marks a published upload as 18+ and the channel post is rebuilt.
-  if (query.data?.startsWith("nsfw:")) {
-    const photoId = Number(query.data.slice(5));
-    if (query.from.id !== ownerTelegramId() || !Number.isInteger(photoId)) {
-      await answerCallbackQuery(query.id, "Bukan untuk kamu").catch(() => undefined);
-      return;
-    }
-
-    await answerCallbackQuery(query.id).catch(() => undefined);
-    if (chatId !== undefined && messageId !== undefined) {
-      await markNsfwAndRepost(photoId, chatId, messageId);
+      const removed = await removeQueued(query.data.slice(5));
+      await editMessageCaption(
+        chatId,
+        messageId,
+        removed ? "Dihapus dari antrean." : "Antrean ini sudah tidak ada.",
+      ).catch(() => undefined);
     }
     return;
   }
@@ -1017,6 +1294,7 @@ async function handleCallback(update: BotUpdate): Promise<void> {
       session.caption,
       session.gender,
       isNsfw,
+      query.from.id === ownerTelegramId(),
     );
     return;
   }
@@ -1027,14 +1305,50 @@ async function handleCallback(update: BotUpdate): Promise<void> {
     return;
   }
 
+  if (query.data === "reportcancel") {
+    await clearReportSession(query.from.id);
+    await editMessageText(chatId, messageId, "Laporan dibatalkan.").catch(() => undefined);
+    return;
+  }
+
   if (query.data === "publish") {
     await publish(chatId, messageId, query.from);
+    return;
+  }
+
+  if (query.data === "publish:queue") {
+    await enqueue(chatId, messageId, query.from);
     return;
   }
 
   if (query.data === "notif:off") {
     await setNotifyByTelegram(query.from.id, false);
     await sendMessage(chatId, "Notifikasi dimatikan. Ketik /notif untuk menyalakan lagi.");
+  }
+}
+
+/** How long the group greeting stays visible before the bot deletes it. */
+const GROUP_WELCOME_MS = 3000;
+
+/** Greets a new group member, then removes the greeting to keep the chat clean. */
+async function welcomeGroupMember(chatId: number, member: TelegramUser): Promise<void> {
+  const handle = member.username ? "@" + member.username : member.first_name;
+  const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.trim() || "retpapbot";
+
+  const text = [
+    "<b>👋 Selamat datang, " + escapeHtml(handle) + "!</b>",
+    "",
+    "Konten PAP ada di channel. Di sini tempat ngobrol.",
+    "Buka aplikasinya lewat bot: @" + botUsername,
+  ].join("\n");
+
+  try {
+    const sent = await sendMessage(chatId, text);
+    setTimeout(() => {
+      void deleteMessage(chatId, sent.message_id).catch(() => undefined);
+    }, GROUP_WELCOME_MS);
+  } catch (error) {
+    console.error("[bot] group welcome failed", error);
   }
 }
 
@@ -1049,8 +1363,12 @@ export async function handleUpdate(update: BotUpdate): Promise<void> {
   const user = message?.from;
   if (!message || !user) return;
 
+  // Group and channel chats are ignored without a reply: the bot has nothing
+  // to do there, and answering every group message spams the chat. The one
+  // exception is a join, which gets a short greeting.
   if (message.chat.type !== "private") {
-    await sendMessage(message.chat.id, "Upload hanya bisa lewat chat pribadi dengan bot.");
+    const joined = (message.new_chat_members ?? []).filter((member) => member.is_bot !== true);
+    for (const member of joined) await welcomeGroupMember(message.chat.id, member);
     return;
   }
 

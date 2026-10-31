@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup reaksi 3 per foto (FIFO) — RetPAP</title>
+<style>
+  :root {
+    --amber: #fbbf24;
+    --cyan: #22d3ee;
+    --rose: #fb7185;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --line: rgba(148, 163, 184, .18);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #070b14; color: var(--text); }
+  body {
+    min-height: 100vh;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background:
+      radial-gradient(ellipse at 12% 0%, rgba(34, 211, 238, .10), transparent 38%),
+      radial-gradient(ellipse at 88% 8%, rgba(251, 191, 36, .07), transparent 34%),
+      #070b14;
+  }
+  .page { padding: 32px; }
+  h1 { font-size: 16px; margin: 0 0 6px; }
+  p.lead { margin: 0 0 24px; font-size: 12px; line-height: 1.65; color: var(--muted); max-width: 1040px; }
+  p.lead b { color: var(--text); }
+
+  .stage { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
+
+  .phone {
+    position: relative;
+    width: 390px;
+    height: 660px;
+    flex: 0 0 auto;
+    border-radius: 34px;
+    overflow: hidden;
+    background: #0b1220;
+    border: 1px solid #1e293b;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+  }
+
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; padding: 8px 10px; border-radius: 14px;
+    background: rgba(15, 23, 42, .7); border: 1px solid var(--line);
+    font-size: 10px; color: var(--muted);
+  }
+  .header b { color: var(--amber); font-size: 13px; }
+
+  .media {
+    position: relative; flex: 1; margin: 8px 0;
+    border-radius: 18px; overflow: hidden;
+    background:
+      radial-gradient(circle at 30% 25%, #3f2a4d, transparent 55%),
+      radial-gradient(circle at 72% 68%, #5b3550, transparent 52%),
+      linear-gradient(160deg, #1c2233, #12182a 60%, #0d1320);
+    border: 1px solid var(--line);
+    cursor: crosshair;
+    touch-action: manipulation;
+  }
+  .media::after {
+    content: "ketuk area foto untuk menaruh reaksi";
+    position: absolute; left: 0; right: 0; bottom: 10px;
+    text-align: center; font-size: 9.5px; color: rgba(148, 163, 184, .75);
+    pointer-events: none;
+  }
+
+  .spot {
+    position: absolute; transform: translate(-50%, -50%);
+    display: flex; align-items: center; gap: 3px;
+    padding: 3px 7px 3px 5px; border-radius: 999px;
+    background: rgba(2, 6, 23, .72); border: 1px solid rgba(148, 163, 184, .35);
+    font-size: 13px; line-height: 1; cursor: pointer;
+    transition: transform .12s ease, border-color .12s ease;
+    backdrop-filter: blur(4px);
+  }
+  .spot:active { transform: translate(-50%, -50%) scale(.94); }
+  .spot.mine { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(251, 191, 36, .25); }
+  .spot .count { font-size: 9px; font-weight: 800; color: var(--amber); }
+  .spot .comment-dot {
+    position: absolute; top: -4px; right: -4px; width: 8px; height: 8px;
+    border-radius: 999px; background: var(--cyan);
+  }
+  .spot.pop { animation: pop .28s ease; }
+  @keyframes pop {
+    0% { transform: translate(-50%, -50%) scale(1); }
+    45% { transform: translate(-50%, -50%) scale(1.22); }
+    100% { transform: translate(-50%, -50%) scale(1); }
+  }
+
+  /* bar cepat */
+  .bar {
+    position: absolute; z-index: 4;
+    display: none; align-items: center; gap: 2px;
+    padding: 4px; border-radius: 999px;
+    background: rgba(2, 6, 23, .92); border: 1px solid rgba(148, 163, 184, .4);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, .55);
+    transform: translate(-50%, calc(-100% - 14px));
+    white-space: nowrap;
+  }
+  .bar.show { display: flex; }
+  .bar .b-emoji {
+    position: relative; border: 0; background: transparent; cursor: pointer;
+    width: 32px; height: 32px; border-radius: 999px; font-size: 17px; line-height: 1;
+    display: grid; place-items: center;
+  }
+  .bar .b-emoji:hover { background: #1e293b; }
+  .bar .b-emoji.mine { background: rgba(251, 191, 36, .24); box-shadow: inset 0 0 0 2px rgba(251, 191, 36, .65); }
+  .bar .b-emoji .n {
+    position: absolute; right: 0; bottom: 0; font-size: 7.5px; font-weight: 800; color: var(--amber);
+  }
+  .bar .sep { width: 1px; height: 20px; background: rgba(148, 163, 184, .35); margin: 0 2px; }
+  .bar .b-more {
+    border: 0; background: transparent; color: #cbd5e1; cursor: pointer;
+    width: 30px; height: 32px; border-radius: 999px; font-size: 15px;
+  }
+  .bar .b-more:hover { background: #1e293b; }
+
+  .status {
+    min-height: 16px; padding: 0 4px 2px; font-size: 10px; color: var(--muted);
+  }
+  .status.warn { color: var(--rose); }
+  .status.ok { color: var(--cyan); }
+
+  /* sheet */
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    max-height: 70%; display: flex; flex-direction: column;
+    border-radius: 24px 24px 0 0; border-top: 1px solid rgba(148, 163, 184, .28);
+    background: #0f172a; box-shadow: 0 -18px 44px rgba(2, 6, 23, .75);
+    transform: translateY(102%); transition: transform .22s ease;
+    z-index: 6;
+  }
+  .sheet.open { transform: translateY(0); }
+  .grabber { width: 40px; height: 4px; border-radius: 999px; background: #475569; margin: 8px auto 4px; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 16px 8px; }
+  .sheet-head h2 { font-size: 11px; margin: 0; letter-spacing: .04em; color: #e2e8f0; }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;
+    padding: 0 10px 14px; overflow-y: auto; min-height: 0;
+  }
+  .cell {
+    aspect-ratio: 1; border: 0; border-radius: 10px; background: transparent;
+    font-size: 20px; line-height: 1; cursor: pointer; position: relative;
+    transition: background .12s ease;
+  }
+  .cell:hover { background: #1e293b; }
+  .cell.mine { background: rgba(251, 191, 36, .22); box-shadow: inset 0 0 0 2px rgba(251, 191, 36, .6); }
+
+  .panel { flex: 1 1 380px; min-width: 320px; max-width: 520px; }
+  .card {
+    border: 1px solid var(--line); border-radius: 14px; background: rgba(15, 23, 42, .55);
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  .card h3 { font-size: 11px; margin: 0 0 8px; letter-spacing: .06em; text-transform: uppercase; color: #cbd5e1; }
+  .card ol, .card ul { margin: 0; padding-left: 16px; font-size: 11px; line-height: 1.75; color: var(--muted); }
+  .card b { color: var(--text); }
+  .state { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; line-height: 1.7; color: #94a3b8; white-space: pre-wrap; }
+  .state .hl { color: var(--amber); }
+  .log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; line-height: 1.75; color: #94a3b8; max-height: 132px; overflow: auto; }
+  .log .old { color: var(--rose); }
+  .log .new { color: var(--cyan); }
+  .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  button.action {
+    font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
+    padding: 7px 11px; border-radius: 9px; color: #e2e8f0;
+    background: #1e293b; border: 1px solid #334155;
+  }
+  button.action:hover { background: #263449; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Mockup: reaksi maksimal 3 per foto, FIFO</h1>
+  <p class="lead">
+    <b>Bar cepat tetap ada.</b> Ketuk area foto → bar 5 emoji muncul di titik itu, satu tap langsung tersimpan.
+    Sheet penuh (32 emoji) hanya dari tombol <b>⋯</b>. Kalau sudah 3 reaksi lalu menambah yang keempat,
+    <b>reaksi paling lama otomatis diganti</b> — tanpa dialog, tanpa undo, tanpa counter.
+  </p>
+
+  <div class="stage">
+    <div class="phone">
+      <div class="header">
+        <span>8.4 <span style="color:#64748b">/ 10.0</span></span>
+        <span style="color:#64748b">142 rating</span>
+      </div>
+
+      <div class="media" id="media">
+        <span class="spot" style="left:28%;top:34%" data-spot="1">🔥<span class="count">2</span></span>
+        <span class="spot" style="left:66%;top:58%" data-spot="2">😘<span class="count">1</span></span>
+        <span class="spot" style="left:44%;top:76%" data-spot="3">💋<span class="count">1</span><span class="comment-dot"></span></span>
+
+        <div class="bar" id="bar">
+          <button class="b-emoji" data-emoji="" type="button"></button>
+          <button class="b-emoji" data-emoji="" type="button"></button>
+          <button class="b-emoji" data-emoji="" type="button"></button>
+          <button class="b-emoji" data-emoji="" type="button"></button>
+          <button class="b-emoji" data-emoji="" type="button"></button>
+          <span class="sep"></span>
+          <button class="b-more" id="more" type="button" aria-label="Semua emoji">⋯</button>
+        </div>
+      </div>
+
+      <div class="status" id="status">belum ada reaksi dari kamu</div>
+
+      <div class="sheet" id="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-head">
+          <h2>Pilih reaksi</h2>
+        </div>
+        <div class="grid" id="grid"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="card">
+        <h3>Aturan FIFO</h3>
+        <ol>
+          <li>Satu titik hanya boleh satu emoji darimu. Tap emoji yang sama di titik itu → <b>hapus</b>.</li>
+          <li>Maksimal 3 titik per foto, dihitung dari reaksimu sendiri.</li>
+          <li>Menambah yang keempat → reaksi <b>paling lama</b> (yang paling awal dipasang) dilepas, yang baru masuk.</li>
+          <li>Tidak ada dialog konfirmasi, tidak ada undo, dan <b>tidak ada counter</b> yang ditampilkan.</li>
+          <li>Emoji yang sama boleh dipakai di titik berbeda; tidak ada aturan pindah otomatis.</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h3>Status sekarang</h3>
+        <div class="state" id="dump"></div>
+        <div class="row">
+          <button class="action" id="reset">Reset</button>
+          <button class="action" id="fill">Isi sampai 3</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Log FIFO</h3>
+        <div class="log" id="log">belum ada penggantian</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var CATALOG = ["🤤","🥵","💦","💋","😋","😘","🫦","🤭",
+                 "🔥","❤️","😍","💯","🍌","🍑","😳","😩",
+                 "😂","🤣","😭","🤯","👀","🫣","💀","🤌",
+                 "👍","👏","💪","🏆","✨","🎯","👌","✌️"];
+  var QUICK = ["🤤","🥵","💦","💋","🔥","❤️"];
+  var MAX = 3;
+
+  var spots = [
+    { id: 1, x: 28, y: 34, others: [{ emoji: "🔥", count: 2 }], mine: null, mineAt: 0, comments: 0 },
+    { id: 2, x: 66, y: 58, others: [{ emoji: "😘", count: 1 }], mine: null, mineAt: 0, comments: 0 },
+    { id: 3, x: 44, y: 76, others: [{ emoji: "💋", count: 1 }], mine: null, mineAt: 0, comments: 1 }
+  ];
+  var nextId = 4;
+  var clock = 1;
+  var activeSpotId = null;
+  var barOpen = false;
+  var sheetOpen = false;
+
+  var media = document.getElementById("media");
+  var bar = document.getElementById("bar");
+  var sheet = document.getElementById("sheet");
+  var grid = document.getElementById("grid");
+  var statusEl = document.getElementById("status");
+  var dump = document.getElementById("dump");
+  var logEl = document.getElementById("log");
+  var barButtons = Array.prototype.slice.call(bar.querySelectorAll(".b-emoji"));
+
+  function mineSpots() { return spots.filter(function (s) { return s.mine; }); }
+  function activeSpot() { return spots.find(function (s) { return s.id === activeSpotId; }); }
+  function spotIndex(id) { return spots.findIndex(function (s) { return s.id === id; }) + 1; }
+
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.className = "status" + (kind ? " " + kind : "");
+  }
+
+  function pushLog(html) {
+    if (logEl.dataset.empty !== "0") { logEl.innerHTML = ""; logEl.dataset.empty = "0"; }
+    var line = document.createElement("div");
+    line.innerHTML = html;
+    logEl.insertBefore(line, logEl.firstChild);
+    while (logEl.children.length > 12) logEl.removeChild(logEl.lastChild);
+  }
+
+  function renderMedia(popSpotId) {
+    media.querySelectorAll(".spot.dynamic").forEach(function (el) { el.remove(); });
+    spots.forEach(function (spot) {
+      var el = media.querySelector('.spot[data-spot="' + spot.id + '"]');
+      if (!el) {
+        el = document.createElement("span");
+        el.className = "spot dynamic";
+        el.dataset.spot = String(spot.id);
+        el.style.left = spot.x + "%";
+        el.style.top = spot.y + "%";
+        media.appendChild(el);
+      }
+      var emoji = spot.mine || (spot.others[0] ? spot.others[0].emoji : "＋");
+      var total = spot.others.reduce(function (sum, r) { return sum + r.count; }, 0) + (spot.mine ? 1 : 0);
+      el.classList.toggle("mine", Boolean(spot.mine));
+      el.innerHTML = emoji +
+        (total > 1 ? '<span class="count">' + total + "</span>" : "") +
+        (spot.comments > 0 ? '<span class="comment-dot"></span>' : "");
+      if (popSpotId && spot.id === popSpotId) {
+        el.classList.remove("pop");
+        void el.offsetWidth;
+        el.classList.add("pop");
+      }
+    });
+  }
+
+  function renderBar() {
+    var spot = activeSpot();
+    if (!spot || !barOpen) { bar.classList.remove("show"); return; }
+    bar.style.left = spot.x + "%";
+    bar.style.top = spot.y + "%";
+    bar.classList.add("show");
+
+    var list = spot.others.map(function (r) { return r.emoji; });
+    if (spot.mine && !list.includes(spot.mine)) list.push(spot.mine);
+    QUICK.forEach(function (emoji) { if (list.length < 5 && !list.includes(emoji)) list.push(emoji); });
+
+    var counts = {};
+    spot.others.forEach(function (r) { counts[r.emoji] = r.count; });
+
+    barButtons.forEach(function (button, index) {
+      var emoji = list[index];
+      button.dataset.emoji = emoji || "";
+      button.style.visibility = emoji ? "visible" : "hidden";
+      if (!emoji) { button.innerHTML = ""; return; }
+      button.classList.toggle("mine", spot.mine === emoji);
+      var count = counts[emoji] || 0;
+      button.innerHTML = emoji + (count > 0 ? '<span class="n">' + count + "</span>" : "");
+    });
+  }
+
+  function renderSheet() {
+    var spot = activeSpot();
+    grid.innerHTML = "";
+    CATALOG.forEach(function (emoji) {
+      var cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "cell" + (spot && spot.mine === emoji ? " mine" : "");
+      cell.textContent = emoji;
+      cell.addEventListener("click", function () { pick(emoji); });
+      grid.appendChild(cell);
+    });
+  }
+
+  function renderDump() {
+    var lines = ["spot   emoji   kamu   urutan"];
+    spots.forEach(function (s) {
+      lines.push(
+        String(s.id).padEnd(7) +
+        (s.others[0] ? s.others[0].emoji : "-").padEnd(8) +
+        (s.mine || "-").padEnd(7) +
+        (s.mine ? String(s.mineAt) : "-")
+      );
+    });
+    lines.push("");
+    lines.push("reaksimu: " + mineSpots().length + "/" + MAX);
+    dump.innerHTML = lines.join("\n").replace(/(reaksimu: .*)/, '<span class="hl">$1</span>');
+  }
+
+  function renderAll(popSpotId) { renderMedia(popSpotId); renderBar(); renderSheet(); renderDump(); }
+
+  function openBar(spotId) {
+    activeSpotId = spotId;
+    barOpen = true;
+    sheetOpen = false;
+    sheet.classList.remove("open");
+    renderAll();
+  }
+
+  function closeBar() { barOpen = false; bar.classList.remove("show"); }
+
+  function openSheet() {
+    sheetOpen = true;
+    bar.classList.remove("show");
+    sheet.classList.add("open");
+    renderAll();
+  }
+
+  function removeAt(spotId, quiet) {
+    var spot = spots.find(function (s) { return s.id === spotId; });
+    if (!spot || !spot.mine) return null;
+    var emoji = spot.mine;
+    spot.mine = null;
+    spot.mineAt = 0;
+    if (!quiet) setStatus("Reaksi " + emoji + " di titik " + spotIndex(spotId) + " dihapus.", "warn");
+    if (!spot.others.length && !spot.comments) {
+      spots = spots.filter(function (s) { return s.id !== spotId; });
+      if (activeSpotId === spotId) { activeSpotId = null; barOpen = false; }
+    }
+    return emoji;
+  }
+
+  function pick(emoji) {
+    var spot = activeSpot();
+    if (!spot) return;
+
+    // 1. Emoji yang sama di titik ini = hapus.
+    if (spot.mine === emoji) {
+      removeAt(spot.id);
+      renderAll();
+      return;
+    }
+
+    // 2. Ganti emoji di titik yang sama: jumlah tidak bertambah.
+    if (spot.mine) {
+      spot.mine = emoji;
+      setStatus("Reaksi di titik " + spotIndex(spot.id) + " diganti jadi " + emoji + ".", "ok");
+      renderAll(spot.id);
+      return;
+    }
+
+    // 3. Masih di bawah 3 = tambah biasa.
+    var mine = mineSpots();
+    if (mine.length < MAX) {
+      spot.mine = emoji;
+      spot.mineAt = clock++;
+      setStatus("Reaksi " + emoji + " ditambahkan di titik " + spotIndex(spot.id) + ".", "ok");
+      renderAll(spot.id);
+      return;
+    }
+
+    // 4. Penuh = FIFO: reaksi paling lama dilepas.
+    var oldest = mine.reduce(function (a, b) { return a.mineAt <= b.mineAt ? a : b; });
+    var oldIndex = spotIndex(oldest.id);
+    var oldEmoji = removeAt(oldest.id, true);
+    spot = spots.find(function (s) { return s.id === activeSpotId; });
+    if (spot) { spot.mine = emoji; spot.mineAt = clock++; }
+
+    pushLog('<span class="old">− ' + oldEmoji + ' titik ' + oldIndex + "</span> &nbsp;→&nbsp; " +
+            '<span class="new">+ ' + emoji + " titik " + spotIndex(activeSpotId) + "</span>");
+    setStatus("Penuh: " + oldEmoji + " di titik " + oldIndex + " diganti " + emoji + ".", "warn");
+    renderAll(activeSpotId);
+  }
+
+  function spotNear(x, y) {
+    var best = null;
+    spots.forEach(function (s) {
+      var d = Math.hypot(s.x - x, s.y - y);
+      if (d < 9 && (!best || d < best.d)) best = { d: d, id: s.id };
+    });
+    return best ? best.id : null;
+  }
+
+  media.addEventListener("click", function (event) {
+    var spotEl = event.target.closest(".spot");
+    if (spotEl) { openBar(Number(spotEl.dataset.spot)); return; }
+    if (event.target.closest(".bar")) return;
+    if (barOpen) { closeBar(); return; }
+
+    var rect = media.getBoundingClientRect();
+    var x = ((event.clientX - rect.left) / rect.width) * 100;
+    var y = ((event.clientY - rect.top) / rect.height) * 100;
+    var near = spotNear(x, y);
+    if (near === null) {
+      var created = { id: nextId++, x: x, y: y, others: [], mine: null, mineAt: 0, comments: 0 };
+      spots.push(created);
+      near = created.id;
+    }
+    openBar(near);
+  });
+
+  barButtons.forEach(function (button) {
+    button.addEventListener("click", function (event) {
+      event.stopPropagation();
+      if (button.dataset.emoji) pick(button.dataset.emoji);
+    });
+  });
+
+  document.getElementById("more").addEventListener("click", function (event) {
+    event.stopPropagation();
+    openSheet();
+  });
+
+  document.getElementById("reset").addEventListener("click", function () {
+    spots = [
+      { id: 1, x: 28, y: 34, others: [{ emoji: "🔥", count: 2 }], mine: null, mineAt: 0, comments: 0 },
+      { id: 2, x: 66, y: 58, others: [{ emoji: "😘", count: 1 }], mine: null, mineAt: 0, comments: 0 },
+      { id: 3, x: 44, y: 76, others: [{ emoji: "💋", count: 1 }], mine: null, mineAt: 0, comments: 1 }
+    ];
+    nextId = 4;
+    clock = 1;
+    activeSpotId = null;
+    barOpen = false;
+    sheetOpen = false;
+    sheet.classList.remove("open");
+    bar.classList.remove("show");
+    logEl.innerHTML = "belum ada penggantian";
+    logEl.dataset.empty = "1";
+    setStatus("belum ada reaksi dari kamu");
+    renderAll();
+  });
+
+  document.getElementById("fill").addEventListener("click", function () {
+    spots.forEach(function (s) { s.mine = null; s.mineAt = 0; });
+    spots[0].mine = "🤤"; spots[0].mineAt = clock++;
+    spots[1].mine = "🥵"; spots[1].mineAt = clock++;
+    spots[2].mine = "💦"; spots[2].mineAt = clock++;
+    setStatus("3 reaksi terpasang. Tambah satu lagi untuk melihat FIFO.", "ok");
+    renderAll();
+  });
+
+  renderAll();
+</script>
+</body>
+</html>

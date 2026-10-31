@@ -97,6 +97,8 @@ await call("setMyCommands", {
     { command: "howto", description: "Cara pakai RetPAP" },
     { command: "batal", description: "Batalkan upload yang sedang berjalan" },
     { command: "notif", description: "Nyalakan atau matikan notifikasi" },
+    { command: "anon", description: "Komentar tanpa nama" },
+    { command: "reward", description: "Klaim hadiah Top PAP bulanan" },
   ],
 });
 

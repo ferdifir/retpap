@@ -36,6 +36,8 @@ export interface BotMessage {
   caption?: string;
   photo?: BotPhotoSize[];
   video?: BotVideo;
+  /** Service message: users who just joined a group. */
+  new_chat_members?: TelegramUser[];
 }
 
 export interface BotCallbackQuery {

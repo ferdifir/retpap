@@ -7,6 +7,7 @@ type AppHeaderProps = {
   reactionsVisible: boolean;
   onToggleReactions: () => void;
   onShare: () => void;
+  onReport: () => void;
   onLeaderboardClick: () => void;
   /** Active feed filter; null before the first pick. */
   preference: "female" | "male" | "all" | null;
@@ -31,6 +32,7 @@ const EMOJI = {
   "eyes-off": "/emoji/eyes-off",
   share: "/emoji/share",
   trophy: "/emoji/trophy",
+  flag: "/emoji/flag",
 } as const;
 
 type EmojiName = keyof typeof EMOJI;
@@ -64,6 +66,7 @@ export function AppHeader({
   reactionsVisible,
   onToggleReactions,
   onShare,
+  onReport,
   onLeaderboardClick,
   preference,
   onPreferenceClick,
@@ -73,8 +76,8 @@ export function AppHeader({
   const achievementName = votes > 0 ? RATING_ACHIEVEMENT_NAMES[level - 1] : "Menunggu rating";
 
   return (
-    <header className="glass-panel z-30 flex shrink-0 items-center justify-between rounded-2xl p-3">
-      <div className="flex min-w-0 items-center gap-2">
+    <header className="glass-panel z-30 flex shrink-0 items-center justify-between gap-2 rounded-2xl p-3">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <RatingAchievementIcon
           level={level}
           earned={votes > 0}
@@ -92,13 +95,20 @@ export function AppHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      {/*
+        The rating block keeps its own space; the pills scroll sideways instead
+        of shrinking into it on narrow screens.
+      */}
+      <div
+        data-native-scroll
+        className="flex max-w-[58%] shrink-0 items-center gap-1.5 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [touch-action:pan-x] [&::-webkit-scrollbar]:hidden"
+      >
         <button
           type="button"
           onClick={onPreferenceClick}
           aria-label={"Ganti filter konten, sekarang " + preferenceLabel}
           title={"Filter: " + preferenceLabel}
-          className="glass-pill flex size-8 items-center justify-center rounded-full transition-transform active:scale-90"
+          className="glass-pill flex size-8 shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
         >
           <PillEmoji name={preferenceEmoji(preference)} />
         </button>
@@ -108,7 +118,7 @@ export function AppHeader({
           onClick={onToggleReactions}
           aria-pressed={reactionsVisible}
           aria-label={reactionsVisible ? "Sembunyikan reaksi emoji" : "Tampilkan reaksi emoji"}
-          className="glass-pill flex size-8 items-center justify-center rounded-full transition-transform active:scale-90"
+          className="glass-pill flex size-8 shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
         >
           <PillEmoji name={reactionsVisible ? "eyes" : "eyes-off"} />
         </button>
@@ -117,16 +127,26 @@ export function AppHeader({
           type="button"
           onClick={onShare}
           aria-label="Bagikan foto ini"
-          className="glass-pill flex size-8 items-center justify-center rounded-full transition-transform active:scale-90"
+          className="glass-pill flex size-8 shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
         >
           <PillEmoji name="share" />
         </button>
 
         <button
           type="button"
+          onClick={onReport}
+          aria-label="Laporkan konten ini"
+          title="Laporkan konten ini"
+          className="glass-pill flex size-8 shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
+        >
+          <PillEmoji name="flag" />
+        </button>
+
+        <button
+          type="button"
           onClick={onLeaderboardClick}
           aria-label="Buka leaderboard"
-          className="glass-pill flex size-8 items-center justify-center rounded-full transition-transform active:scale-90"
+          className="glass-pill flex size-8 shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
         >
           <PillEmoji name="trophy" />
         </button>

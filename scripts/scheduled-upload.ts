@@ -26,7 +26,7 @@ import "./dotenv-load";
 
 import path from "node:path";
 import os from "node:os";
-import { readdir, readFile, stat, writeFile, mkdir } from "node:fs/promises";
+import { readdir, readFile, rm, stat, writeFile, mkdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { getDb } from "../src/db/client";
 import { photos } from "../src/db/schema";
@@ -38,6 +38,7 @@ import {
 import { channelConfigured, channelId } from "../src/lib/bot/channel";
 import { sendPhotoFile, sendVideoFile } from "../src/lib/bot/api";
 import { extractPoster, normalisePoster, probeVideo, extractTeaser, type Poster } from "../src/lib/bot/video";
+import { readQueueMeta } from "../src/lib/bot/queue";
 import sharp from "sharp";
 
 // --- konfigurasi ----------------------------------------------------------
@@ -167,7 +168,7 @@ function channelKeyboard(slug: string) {
   return {
     inline_keyboard: [
       [
-        { text: "Beri nilai", url: shareUrlFor(slug) },
+        { text: "Lihat versi jelas", url: shareUrlFor(slug) },
         { text: "Upload", url: uploadUrl() },
       ],
     ],
@@ -218,7 +219,13 @@ async function uploadOne(file: string): Promise<boolean> {
   const bytes = await readFile(full);
   const ext = path.extname(file).toLowerCase();
   const isVideo = VIDEO_EXT.has(ext);
-  const caption = path.parse(file).name.slice(0, 500);
+  // Antrean owner: caption, gender, 18+ dan pemilik ada di sidecar, karena
+  // nama file hanya memuat caption. File manual tidak punya sidecar.
+  const queued = await readQueueMeta(full + ".json");
+  const caption = (queued?.caption ?? path.parse(file).name).slice(0, 500);
+  const gender = queued?.gender ?? UPLOAD_GENDER;
+  const isNsfw = queued?.isNsfw ?? false;
+  const userId = queued?.userId ?? null;
 
   let slug: string;
   let imageUrl: string;
@@ -280,9 +287,9 @@ async function uploadOne(file: string): Promise<boolean> {
     imageHeight,
     durationSeconds,
     posterUrl,
-    userId: null,
-    isNsfw: false,
-    gender: UPLOAD_GENDER,
+    userId,
+    isNsfw,
+    gender,
   });
 
   // Tanpa channel, konten tetap dianggap tayang (tidak ada post yang bisa gagal).
@@ -298,7 +305,7 @@ async function uploadOne(file: string): Promise<boolean> {
         let teaser: Buffer | null = null;
         if (videoPath) {
           try {
-            teaser = await extractTeaser(videoPath);
+            teaser = await extractTeaser(videoPath, { nsfw: isNsfw });
           } catch (error) {
             console.error("[channel] teaser failed", slug, error);
           }
@@ -334,6 +341,9 @@ async function uploadOne(file: string): Promise<boolean> {
       console.error("[channel] post failed for", slug, error);
     }
   }
+  // Sidecar hanya berlaku sekali; media tetap di folder seperti file manual.
+  if (queued) await rm(full + ".json", { force: true });
+
   console.log(
     "[upload] " + file + " -> " + slug + " (" + mediaType + ")" +
       (DRY_RUN ? " (DRY_RUN)" : "") +
@@ -404,11 +414,14 @@ async function main(): Promise<void> {
   for (const f of entries) {
     const ext = path.extname(f).toLowerCase();
     if (!ALLOWED_EXT.has(ext)) continue;
-    if (shouldSkip(f)) continue;
+    // Antrean owner ikut pool yang sama: tanpa prioritas dan tanpa aturan
+    // "pagi", karena captionnya bukan penanda jadwal.
+    const queued = await readQueueMeta(path.join(INBOX_DIR, f) + ".json");
+    if (!queued && shouldSkip(f)) continue;
     const st = await stat(path.join(INBOX_DIR, f));
     const key = f + "|" + st.size + "|" + st.mtimeMs;
     if (state.uploaded[key]) continue;
-    const morning = isMorning(f);
+    const morning = queued ? false : isMorning(f);
     if (morning && !inMorningWindow) {
       console.log("[skip] pagi di luar window: " + f);
       continue;

@@ -10,12 +10,14 @@ import { track } from "@/lib/analytics/track";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { setNsfwReveal, useNsfwReveal } from "@/lib/nsfw";
 import { findSpotAt } from "@/lib/reaction-rules";
+import { QUICK_REACTION_EMOJIS } from "@/lib/reactions/catalog";
 import { pushRecentEmoji, useRecentEmojis } from "@/lib/reactions/recent";
 import { haptic } from "@/lib/telegram";
 import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
 import type { CardPosition, DragAxis, InputSource, ReactionResult, SpotTarget } from "@/lib/types";
 import { CaptionText } from "./caption-text";
 import { RatingSlider } from "./rating-slider";
+import { ReactionBar } from "./reaction-bar";
 import { ReactionSheet } from "./reaction-sheet";
 import { SpotMarker } from "./spot-marker";
 import { SpotPanel, type PanelMode } from "./spot-panel";
@@ -27,7 +29,10 @@ type Interaction = {
   xPct: number;
   yPct: number;
   spotId: number | null;
-  mode: PanelMode;
+  /** "emoji" renders the reaction bar, the rest render the comment panel. */
+  mode: PanelMode | "emoji";
+  /** Opened by the automatic preview, not by the user. */
+  auto?: boolean;
 };
 
 type PapCardProps = {
@@ -64,6 +69,11 @@ const TRANSFORMS: Record<CardPosition, string> = {
 
 const LONG_PRESS_MS = 420;
 const TAP_SLOP_PX = 12;
+/** Auto comment preview: one photo per app session, shown briefly. */
+const PREVIEW_DELAY_MS = 700;
+const PREVIEW_SLIDE_MS = 2000;
+const PREVIEW_MAX_MS = 10_000;
+const PREVIEW_SESSION_KEY = "retpap:comment-preview";
 
 export function PapCard({
   item,
@@ -108,6 +118,11 @@ export function PapCard({
   const longFired = useRef(false);
   const pressOrigin = useRef<{ x: number; y: number } | null>(null);
   const commentRequest = useRef(0);
+  const previewTimer = useRef<number | null>(null);
+  const previewHide = useRef<number | null>(null);
+  const previewStarted = useRef(false);
+  // Mirrors `interaction` for timers, which must not re-run the effect below.
+  const interactionRef = useRef<Interaction | null>(null);
   // A pinch just happened: the touch fallback must not treat its release as a tap.
   const pinched = useRef(false);
   const photoRef = useRef<HTMLDivElement>(null);
@@ -169,8 +184,8 @@ export function PapCard({
 
   const openForSpot = useCallback(
     (target: FeedSpot, mode?: PanelMode) => {
-      const both = target.total > 0 && target.comments > 0;
-      const next: PanelMode = mode ?? (both ? "chooser" : target.total > 0 ? "emoji" : "comments");
+      // A spot is either a reaction spot or a comment spot.
+      const next: PanelMode | "emoji" = mode ?? (target.comments > 0 ? "comments" : "emoji");
 
       setInteraction({ xPct: target.x, yPct: target.y, spotId: target.id, mode: next });
       if (next === "comments") void loadComments(target.id);
@@ -180,25 +195,127 @@ export function PapCard({
   );
 
   const openPoint = useCallback(
-    (xPct: number, yPct: number, mode: PanelMode) => {
-      const snapped = findSpotAt(item.spots, xPct, yPct, aspect);
-      // A hold on empty space writes a new comment; only an existing spot has
-      // a thread to open.
-      const nextMode: PanelMode = mode === "comments" && snapped === null ? "composer" : mode;
+    (xPct: number, yPct: number, mode: "emoji" | "comments") => {
+      if (mode === "emoji") {
+        // Tapping a comment spot opens its thread instead of starting a
+        // reaction on top of it.
+        const snapped = findSpotAt(item.spots, xPct, yPct, aspect);
+        const target = snapped === null ? null : (item.spots.find((entry) => entry.id === snapped) ?? null);
 
-      setInteraction({ xPct, yPct, spotId: snapped, mode: nextMode });
-      if (nextMode === "comments" && snapped !== null) void loadComments(snapped);
-      haptic(nextMode === "composer" || nextMode === "comments" ? "impact" : "selection");
+        if (target && target.comments > 0) {
+          setInteraction({ xPct: target.x, yPct: target.y, spotId: target.id, mode: "comments" });
+          void loadComments(target.id);
+          haptic("selection");
+          return;
+        }
+
+        setInteraction({ xPct, yPct, spotId: target?.id ?? null, mode: "emoji" });
+        haptic("selection");
+        return;
+      }
+
+      // A hold only reuses comment spots; landing on a reaction spot would
+      // break the one-kind-per-spot rule.
+      const commentSpots = item.spots.filter((entry) => entry.comments > 0);
+      const snapped = findSpotAt(commentSpots, xPct, yPct, aspect);
+      const target = snapped === null ? null : (commentSpots.find((entry) => entry.id === snapped) ?? null);
+
+      setInteraction({ xPct, yPct, spotId: target?.id ?? null, mode: target ? "comments" : "composer" });
+      if (target) void loadComments(target.id);
+      haptic("impact");
     },
     [aspect, item.spots, loadComments],
   );
 
+  const clearPreviewTimers = useCallback(() => {
+    if (previewTimer.current !== null) {
+      window.clearTimeout(previewTimer.current);
+      previewTimer.current = null;
+    }
+    if (previewHide.current !== null) {
+      window.clearTimeout(previewHide.current);
+      previewHide.current = null;
+    }
+  }, []);
+
   const closePanel = useCallback(() => {
+    clearPreviewTimers();
     setInteraction(null);
     setComments(null);
     setSheetOpen(false);
     setReactError(null);
-  }, []);
+  }, [clearPreviewTimers]);
+
+  const activeRef = useRef(false);
+  const ratingRef = useRef(false);
+
+  useEffect(() => {
+    interactionRef.current = interaction;
+    activeRef.current = isActive;
+    ratingRef.current = ratingDragging;
+  }, [interaction, isActive, ratingDragging]);
+
+  /**
+   * One automatic comment preview per app session: the first active photo that
+   * has a comment spot opens its thread for a few seconds. The session flag is
+   * claimed before the fetch, so a failure never turns into a retry loop.
+   */
+  useEffect(() => {
+    if (!isActive || nsfwHidden || ratingDragging) return;
+    // A re-render (new spots array after a reaction, say) must not restart or
+    // cancel a preview that is already scheduled.
+    if (previewStarted.current) return;
+
+    try {
+      if (window.sessionStorage.getItem(PREVIEW_SESSION_KEY)) return;
+    } catch {
+      return;
+    }
+
+    const spots = item.spots.filter((entry) => entry.comments > 0);
+    if (spots.length === 0) return;
+
+    previewStarted.current = true;
+    try {
+      window.sessionStorage.setItem(PREVIEW_SESSION_KEY, "1");
+    } catch {
+      // Private mode without storage: the ref above still keeps it to one run.
+    }
+    const target = spots[Math.floor(Math.random() * spots.length)];
+
+    previewTimer.current = window.setTimeout(async () => {
+      previewTimer.current = null;
+      if (!activeRef.current || ratingRef.current || interactionRef.current !== null) return;
+
+      const list = await onLoadComments(target.id).catch(() => [] as FeedComment[]);
+      if (list.length === 0) return;
+      // The user may have opened something, or swiped away, while the request
+      // was in flight.
+      if (!activeRef.current || ratingRef.current || interactionRef.current !== null) return;
+
+      setInteraction({
+        xPct: target.x,
+        yPct: target.y,
+        spotId: target.id,
+        mode: "comments",
+        auto: true,
+      });
+      setComments(list);
+
+      const duration = Math.min(list.length * PREVIEW_SLIDE_MS + 1500, PREVIEW_MAX_MS);
+      previewHide.current = window.setTimeout(() => {
+        previewHide.current = null;
+        closePanel();
+      }, duration);
+    }, PREVIEW_DELAY_MS);
+  }, [closePanel, isActive, item.spots, nsfwHidden, onLoadComments, ratingDragging]);
+
+  // A manual panel replaces the preview: its own hide timer must not fire.
+  useEffect(() => {
+    if (interaction !== null && interaction.auto !== true) clearPreviewTimers();
+  }, [clearPreviewTimers, interaction]);
+
+  useEffect(() => clearPreviewTimers, [clearPreviewTimers]);
 
   // One Escape owner: the sheet closes first, then the panel. Two document
   // listeners would close both at once.
@@ -423,6 +540,37 @@ export function PapCard({
     : 0;
   const panelY = interaction ? box.top + interaction.yPct * box.height : 0;
 
+  // The bar is anchored to the tapped point, not to the panel centre.
+  const frameHeight = box.height > 0 ? box.top * 2 + box.height : 640;
+  const anchorX = interaction ? box.left + interaction.xPct * box.width : 0;
+  const anchorY = interaction ? box.top + interaction.yPct * box.height : 0;
+
+  // Same clamp the bar uses, so the comment panel's tail keeps pointing at the
+  // tap even when the panel is pushed away from the edge.
+  const PANEL_WIDTH = 236;
+  const panelTailX = Math.max(
+    18,
+    Math.min(anchorX - panelX + PANEL_WIDTH / 2, PANEL_WIDTH - 18),
+  );
+
+  // Reacted emoji first (already sorted by count), then recent picks, then the
+  // defaults, so the five slots are always full.
+  const reacted = spot?.reactions ?? [];
+  const counts = new Map(reacted.map((reaction) => [reaction.emoji, reaction.count]));
+  const barEmojis = (() => {
+    const list = reacted.map((reaction) => reaction.emoji);
+    const target = Math.max(5, list.length);
+    for (const emoji of [...recent, ...QUICK_REACTION_EMOJIS]) {
+      if (list.length >= target) break;
+      if (!list.includes(emoji)) list.push(emoji);
+    }
+    return list.map((emoji) => ({
+      emoji,
+      count: counts.get(emoji) ?? 0,
+      mine: spot?.myEmoji === emoji,
+    }));
+  })();
+
   // Scaling about the pinch midpoint keeps the point under the fingers fixed.
   // The container is untouched, so useImageBox and toPct stay valid.
   const mediaStyle =
@@ -631,28 +779,37 @@ export function PapCard({
           ) : null}
 
           {!nsfwHidden && isActive && interaction ? (
-            <SpotPanel
-              x={panelX}
-              y={panelY}
-              above={interaction.yPct > 0.36}
-              mode={interaction.mode}
-              spot={spot}
-              comments={comments}
-              busy={busy}
-              recent={recent}
-              reactError={reactError}
-              onMode={(mode) => {
-                setInteraction((current) => (current ? { ...current, mode } : current));
-                setReactError(null);
-                if (mode === "comments" && interaction.spotId !== null) {
-                  void loadComments(interaction.spotId);
-                }
-              }}
-              onEmoji={(emoji) => void handleEmoji(emoji)}
-              onMore={() => setSheetOpen(true)}
-              onComment={(body) => void handleComment(body)}
-              onDeleteComment={() => void handleDeleteComment()}
-            />
+            interaction.mode === "emoji" ? (
+              <ReactionBar
+                anchorX={anchorX}
+                anchorY={anchorY}
+                frameWidth={frameWidth}
+                frameHeight={frameHeight}
+                emojis={barEmojis}
+                onEmoji={(emoji) => void handleEmoji(emoji)}
+                onMore={() => setSheetOpen(true)}
+              />
+            ) : (
+              <SpotPanel
+                x={panelX}
+                y={panelY}
+                above={interaction.yPct > 0.36}
+                tailX={panelTailX}
+                mode={interaction.mode}
+                comments={comments}
+                autoPlay={interaction.auto === true}
+                onInteract={() => {
+                  // Touching the preview turns it into a normal panel: no more
+                  // auto-slide, no auto-hide while the user types.
+                  if (interaction.auto === true) {
+                    setInteraction({ ...interaction, auto: false });
+                  }
+                }}
+                busy={busy}
+                onComment={(body) => void handleComment(body)}
+                onDeleteComment={() => void handleDeleteComment()}
+              />
+            )
           ) : null}
 
           {!nsfwHidden && isActive && interaction && sheetOpen ? (

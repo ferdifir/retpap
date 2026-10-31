@@ -1,22 +1,26 @@
 import {
   claimLeaderboardAnnouncement,
+  createMonthlyReward,
   getLeaderboard,
+  getPhotoUploader,
+  getUserTelegramId,
   markLeaderboardAnnouncementFailed,
   markLeaderboardAnnouncementSent,
   type LeaderboardAnnouncementKind,
 } from "@/db/queries";
 import type { LeaderboardPeriod, LeaderboardResult } from "@/lib/feed-types";
 import {
-  isLastWibDayOfMonth,
+  isMonthlyAnnounceDay,
   leaderboardWindow,
   WIB_TIME_ZONE,
   wibHour,
   wibParts,
   wibWeekday,
 } from "@/lib/leaderboard-period";
-import { leaderboardUrl } from "@/lib/share";
-import { BotApiError, sendMessage } from "./api";
-import { channelConfigured, channelId } from "./channel";
+import { leaderboardUrl, rewardUrl } from "@/lib/share";
+import { BotApiError, sendMessage, sendPhotoFile } from "./api";
+import { renderPodiumImage } from "./leaderboard-image";
+import { channelConfigured, channelId, ownerTelegramId } from "./channel";
 import { escapeHtml } from "./format";
 
 const MAX_ATTEMPTS = 5;
@@ -75,7 +79,7 @@ export function dueAnnouncementKinds(
 
   const kinds: LeaderboardAnnouncementKind[] = ["daily"];
   if (wibWeekday(now) === 0) kinds.push("weekly");
-  if (isLastWibDayOfMonth(now)) kinds.push("monthly");
+  if (isMonthlyAnnounceDay(now)) kinds.push("monthly");
   return kinds;
 }
 
@@ -111,6 +115,38 @@ function periodDateLine(
   return FULL_DATE.format(start) + " – " + FULL_DATE.format(end);
 }
 
+const DEADLINE = new Intl.DateTimeFormat("id-ID", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: WIB_TIME_ZONE,
+});
+
+/**
+ * Monthly posts explain the prize and how the number was produced. The amount
+ * is computed from the same entry that freezeMonthlyReward() stores, so the
+ * channel and the claim can never disagree.
+ */
+function rewardLines(result: LeaderboardResult): string[] {
+  const winner = result.entries[0];
+  if (!winner || !result.end) return [];
+
+  const amount = Math.round(winner.avg * winner.votes);
+  const raw = (winner.avg * winner.votes).toFixed(1);
+  // period_end is exclusive (next month 00:00), so the deadline is a minute before.
+  const deadline = new Date(new Date(result.end).getTime() - 60_000);
+
+  return [
+    "🎁 <b>Hadiah: " + amount + " Stars</b>",
+    "Rata-rata rating × jumlah rating = " + winner.avg.toFixed(1) + " × " + winner.votes + " = " + raw + " → dibulatkan " + amount,
+    "Klaim dengan cara kirim /reward ke bot sebelum " +
+      DEADLINE.format(deadline) +
+      " WIB.",
+  ];
+}
+
 /** Text of the channel post, including the period date and the qualifiers. */
 export function leaderboardAnnouncementText(
   kind: LeaderboardAnnouncementKind,
@@ -140,22 +176,28 @@ export function leaderboardAnnouncementText(
       .join(" · "),
     "",
     ...rows,
+    ...(kind === "monthly" ? ["", ...rewardLines(result)] : []),
     "",
     "Lihat peringkat lengkap dan periode lainnya 👇",
   ].join("\n");
 }
 
 function announcementKeyboard(kind: LeaderboardAnnouncementKind) {
-  return {
-    inline_keyboard: [
-      [
-        {
-          text: "🏆 Lihat Leaderboard",
-          url: leaderboardUrl(KIND_META[kind].period),
-        },
-      ],
+  const rows = [
+    [
+      {
+        text: "🏆 Lihat Leaderboard",
+        url: leaderboardUrl(KIND_META[kind].period),
+      },
     ],
-  };
+  ];
+
+  // Monthly posts carry a prize, so the claim gets its own button.
+  if (kind === "monthly") {
+    rows.push([{ text: "🎁 Klaim hadiah", url: rewardUrl() }]);
+  }
+
+  return { inline_keyboard: rows };
 }
 
 function reasonOf(error: unknown): string {
@@ -193,11 +235,57 @@ export async function maybeAnnounceLeaderboards(
   if (kinds.length === 0) return null;
 
   const announcements: LeaderboardAnnouncementOutcome[] = [];
+
+  // The monthly recap is the important one, so it goes first and the shorter
+  // recaps of that same day are dropped: two posts in the same minute would
+  // bury it. Only a monthly recap that actually went out (or was already sent
+  // earlier today) suppresses the rest; an empty or failed one does not.
+  if (kinds.includes("monthly")) {
+    const monthly = await announceOne("monthly", now);
+    announcements.push(monthly);
+
+    if (monthly.sent || monthly.skipped === "already-sent") {
+      return { announcements };
+    }
+  }
+
   for (const kind of kinds) {
+    if (kind === "monthly") continue;
     announcements.push(await announceOne(kind, now));
   }
 
   return { announcements };
+}
+
+/**
+ * Stores the monthly winner plus a per-voter copy of its ratings. Seeded
+ * content has no uploader, so the owner is the one who can claim it.
+ */
+async function freezeMonthlyReward(
+  result: LeaderboardResult,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<void> {
+  const winner = result.entries[0];
+  if (!winner) return;
+
+  const uploaderId = await getPhotoUploader(winner.id);
+  const uploaderTelegramId =
+    uploaderId === null ? null : await getUserTelegramId(uploaderId);
+  const recipient = uploaderTelegramId ?? ownerTelegramId();
+  if (recipient === null) return;
+
+  await createMonthlyReward({
+    periodStart,
+    periodEnd,
+    decidedAt: new Date(),
+    photoId: winner.id,
+    userId: uploaderId,
+    telegramId: recipient,
+    avgScore: winner.avg,
+    votes: winner.votes,
+    amount: Math.round(winner.avg * winner.votes),
+  });
 }
 
 async function announceOne(
@@ -241,14 +329,46 @@ async function announceOne(
   }
 
   try {
-    const message = await sendMessage(
-      channelId(),
-      leaderboardAnnouncementText(kind, result),
-      {
-        keyboard: announcementKeyboard(kind),
-      },
-    );
+    const text = leaderboardAnnouncementText(kind, result);
+    const keyboard = announcementKeyboard(kind);
+    const subtitle = periodDateLine(kind, result);
+
+    // The podium picture is a bonus: a failed render must not stop the recap.
+    const image = await renderPodiumImage(
+      result,
+      "TOP PAP " + KIND_META[kind].label,
+      subtitle,
+    ).catch((error) => {
+      console.error("[leaderboard] podium render failed", error);
+      return null;
+    });
+
+    let message;
+    if (image) {
+      // Photo captions cap at 1024 characters; longer text goes as its own
+      // message so the channel still gets the full explanation.
+      message =
+        text.length <= 1024
+          ? await sendPhotoFile(channelId(), image, { caption: text, keyboard })
+          : await sendPhotoFile(channelId(), image);
+
+      if (text.length > 1024) {
+        await sendMessage(channelId(), text, { keyboard });
+      }
+    } else {
+      message = await sendMessage(channelId(), text, { keyboard });
+    }
+
     await markLeaderboardAnnouncementSent(claim.id, message.message_id);
+
+    // The recap is live, so the standings are final for this period: freeze the
+    // winner before anything can change the ratings behind it.
+    if (kind === "monthly") {
+      await freezeMonthlyReward(result, window.start, window.end).catch((error) => {
+        console.error("[reward] freeze failed", error);
+      });
+    }
+
     return { kind, periodStart, sent: true, messageId: message.message_id };
   } catch (error) {
     const reason = reasonOf(error);

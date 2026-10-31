@@ -22,9 +22,10 @@ import {
   pendingLeaderboardPeriod,
   readSharedSlug,
   readStartTarget,
+  reportUrl,
   telegramShareLink,
 } from "@/lib/share";
-import { getTelegramWebApp, haptic } from "@/lib/telegram";
+import { getTelegramWebApp, haptic, openTelegramUrl } from "@/lib/telegram";
 import type { DragAxis, InputSource, ReactionResult, SpotTarget } from "@/lib/types";
 import { AppHeader } from "./app-header";
 import { EmptyState } from "./empty-state";
@@ -187,13 +188,9 @@ export function PapRater() {
           return;
         }
 
-        // First visit: the filter has to be picked before the deck makes
-        // sense, so skip the feed fetch until the user chooses.
-        if (!sessionBody.preference) {
-          if (!cancelled) setLoadState("ready");
-          return;
-        }
-
+        // The feed loads before the filter is picked: an unset preference
+        // already means "everything" on the server, and a blocking picker cost
+        // channel visitors the first screen. The picker is opened on demand.
         const response = await fetch("/api/feed");
         if (!response.ok) throw new Error("feed");
 
@@ -201,7 +198,7 @@ export function PapRater() {
         if (cancelled) return;
 
         track("feed_loaded", {
-          meta: { count: body.photos.length, pref: sessionBody.preference },
+          meta: { count: body.photos.length, pref: sessionBody.preference ?? "all" },
         });
 
         // A share link pins its photo first; the rest keeps the normal order
@@ -286,7 +283,7 @@ export function PapRater() {
   // while the user swipes past it.
   useEffect(() => {
     if (!photos || photos.length === 0) return;
-    if (gate || preference === null || pickerOpen) return;
+    if (gate || pickerOpen) return;
 
     const photo = photos[currentIndex];
     if (!photo) return;
@@ -765,6 +762,16 @@ export function PapRater() {
     window.open(link, "_blank", "noopener,noreferrer");
   }, [currentIndex]);
 
+  // The report lives in the bot chat, so this only hands over the photo id and
+  // lets the bot collect the text.
+  const reportCurrentPhoto = useCallback(() => {
+    const photo = photosRef.current?.[currentIndex];
+    if (!photo) return;
+
+    haptic("impact");
+    openTelegramUrl(reportUrl(photo.id));
+  }, [currentIndex]);
+
   if (loadState === "loading") {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
@@ -785,14 +792,14 @@ export function PapRater() {
     return <StartGate kind={gate} channelUrl={channelUrl} onRecheck={recheckChannel} />;
   }
 
-  if (preference === null || pickerOpen) {
+  if (pickerOpen) {
     return (
       <GenderPicker
         value={preference}
         busy={savingPreference}
         error={preferenceError}
         onPick={(value) => void choosePreference(value)}
-        onClose={preference === null ? undefined : () => setPickerOpen(false)}
+        onClose={() => setPickerOpen(false)}
       />
     );
   }
@@ -800,7 +807,7 @@ export function PapRater() {
   if (photos && photos.length === 0) {
     return (
       <EmptyState
-        filtered={preference !== "all"}
+        filtered={preference === "female" || preference === "male"}
         onShowAll={() => void choosePreference("all")}
       />
     );
@@ -829,6 +836,7 @@ export function PapRater() {
           setReactionsVisible((visible) => !visible);
         }}
         onShare={shareCurrentPhoto}
+        onReport={reportCurrentPhoto}
         onLeaderboardClick={() => {
           markPushedPage();
           router.push("/leaderboard");

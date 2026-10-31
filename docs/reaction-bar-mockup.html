@@ -26,15 +26,15 @@
   .photobox { position:relative; flex:1; margin:0 10px 10px; border-radius:22px; overflow:hidden;
     border:1px solid #1e293b; background:#020617; }
   .photobox img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-  .tapzone { position:absolute; inset:0; cursor:crosshair; touch-action:manipulation;
+  .tapzone { position:absolute; inset:0; cursor:crosshair;
     user-select:none; -webkit-user-select:none; }
 
   /* ---------------- bar ---------------- */
-  .bar { position:absolute; display:flex; align-items:center; gap:2px;
-    padding:7px 8px; border-radius:999px;
+  .bar { position:absolute; display:flex; align-items:center;
+    padding:7px 8px 7px 7px; border-radius:999px;
     background:#16233a;
     box-shadow:0 14px 34px rgba(2,6,23,.72), 0 2px 0 rgba(255,255,255,.04) inset;
-    transform:translateY(0); opacity:0; pointer-events:none; transition:opacity .14s ease; }
+    opacity:0; pointer-events:none; transition:opacity .14s ease; }
   .bar.show { opacity:1; pointer-events:auto; animation:pop .16s ease-out both; }
   @keyframes pop { from { opacity:0; transform:scale(.94); } to { opacity:1; transform:none; } }
 
@@ -43,34 +43,43 @@
   .bar.above .tail { bottom:-6px; }
   .bar.below .tail { top:-6px; }
 
-  .cell { position:relative; display:flex; flex-direction:column; align-items:center;
-    justify-content:center; gap:1px; width:44px; height:46px;
-    border:0; background:none; cursor:pointer; padding:0; border-radius:12px;
-    font-size:26px; line-height:1; transition:transform .12s, background .12s; }
-  .cell span.e { display:block; transform:translateZ(0); }
+  /* strip: 5 slot terlihat, sisanya digeser horizontal */
+  .stripwrap { position:relative; flex:0 0 auto; }
+  .strip { display:flex; gap:2px; width:calc(5 * 52px + 4 * 2px);
+    overflow-x:auto; overflow-y:hidden; scroll-snap-type:x mandatory;
+    scrollbar-width:none; -ms-overflow-style:none; overscroll-behavior-x:contain; }
+  .strip::-webkit-scrollbar { display:none; }
+  .stripwrap::after { content:""; position:absolute; top:0; right:0; bottom:0; width:8px;
+    pointer-events:none; opacity:0; transition:opacity .12s;
+    background:linear-gradient(to right, rgba(22,35,58,0), #16233a 70%); }
+  .stripwrap.more-right::after { opacity:1; }
+  .stripwrap.more-left::before { content:""; position:absolute; top:0; left:0; bottom:0; width:8px;
+    pointer-events:none; z-index:1;
+    background:linear-gradient(to left, rgba(22,35,58,0), #16233a 70%); }
+
+  .cell { position:relative; flex:0 0 52px; width:52px; height:46px;
+    display:flex; flex-direction:row; align-items:center; justify-content:center; gap:4px;
+    scroll-snap-align:start; border:0; background:none; cursor:pointer; padding:0;
+    border-radius:12px; font-size:26px; line-height:1;
+    transition:transform .12s, background .12s; }
   .cell:hover { transform:translateY(-2px) scale(1.08); }
   .cell:active { transform:scale(.94); }
-  .cell .n { font-size:8px; font-weight:900; color:#fcd34d; letter-spacing:-.02em;
-    line-height:1; font-variant-numeric:tabular-nums; }
+  /* Counter: sama dengan panel sekarang — 9px, 900, amber-300, di kanan emoji. */
+  .cell .n { font-size:9px; font-weight:900; color:#fcd34d; line-height:1;
+    font-variant-numeric:tabular-nums; }
   .cell.mine { background:rgba(251,191,36,.18); box-shadow:0 0 0 1.5px rgba(251,191,36,.55) inset; }
 
-  .more { display:grid; place-items:center; width:34px; height:34px; margin-left:4px;
-    border-radius:999px; border:0; cursor:pointer; color:#cbd5e1;
+  /* tombol expand: di luar strip, posisi tidak ikut tergeser */
+  .more { flex:0 0 34px; display:grid; place-items:center; width:34px; height:34px;
+    margin-left:6px; border-radius:999px; border:0; cursor:pointer; color:#cbd5e1;
     background:rgba(148,163,184,.14); font-size:15px; line-height:1; }
   .more:hover { background:rgba(148,163,184,.26); color:#fff; }
 
-  /* variant A — chip per emoji */
-  .v-a .cell { width:48px; height:44px; border-radius:999px; font-size:22px;
+  /* varian visual */
+  .v-a .cell { border-radius:999px; font-size:22px;
     background:rgba(251,191,36,.08); box-shadow:0 0 0 1px rgba(251,191,36,.22) inset; }
-  .v-a .cell + .cell { margin-left:3px; }
-  /* variant B — flat, no container */
-  .v-b { padding:9px 10px; }
-  .v-b .cell { width:43px; font-size:27px; }
-  /* variant C — rounded square tile */
-  .v-c { padding:8px; }
-  .v-c .cell { width:43px; height:46px; border-radius:13px; font-size:24px;
-    background:rgba(255,255,255,.05); }
-  .v-c .cell + .cell { margin-left:3px; }
+  .v-b .cell { font-size:25px; }
+  .v-c .cell { border-radius:13px; font-size:24px; background:rgba(255,255,255,.05); }
 
   /* ---------------- side panel ---------------- */
   .card { border:1px solid #1e293b; border-radius:14px; padding:14px; background:#0b1220; }
@@ -99,15 +108,17 @@
       <img src="../public/foto.jpg" alt="foto">
       <div class="tapzone" id="zone"></div>
       <div class="bar v-a above" id="bar">
-        <span class="tail" id="tail"></span>
+        <span class="tail"></span>
+        <div class="stripwrap" id="stripwrap"><div class="strip" id="strip"></div></div>
+        <button class="more" id="more" aria-label="Emoji lainnya">⌄</button>
       </div>
     </div>
   </div>
 
   <div>
     <h1>Bar reaksi satu baris</h1>
-    <p class="lead">Ketuk di mana saja pada foto. Bar muncul satu baris dengan ekor yang
-      menunjuk tepat ke titik ketuk — bukan selalu ke tengah bar.</p>
+    <p class="lead">Ketuk di mana saja pada foto. Emoji diurutkan dari reaksi terbanyak.
+      Lima slot terlihat; sisanya digeser horizontal. Tombol <code>⌄</code> tetap di tempat.</p>
 
     <h2>Varian</h2>
     <div class="card">
@@ -117,10 +128,26 @@
         <button class="btn" data-v="v-c">C · Tile</button>
       </div>
       <ul>
-        <li><b>A</b> — tiap emoji punya kapsul tipis amber, konsisten dengan bar lama.</li>
-        <li><b>B</b> — polos, emoji paling besar (28px), paling mirip screenshot.</li>
-        <li><b>C</b> — tile rounded-square abu, kesan “keyboard”.</li>
+        <li><b>A</b> — kapsul tipis amber per emoji.</li>
+        <li><b>B</b> — polos, emoji paling besar.</li>
+        <li><b>C</b> — tile rounded-square abu.</li>
       </ul>
+    </div>
+
+    <h2>Data uji</h2>
+    <div class="card">
+      <div class="row">
+        <button class="btn" data-count="9">9 emoji</button>
+        <button class="btn" data-count="5">5 emoji</button>
+        <button class="btn" data-count="14">14 emoji</button>
+        <button class="btn" id="shuffle">Acak jumlah reaksi</button>
+      </div>
+      <div class="kv" style="margin-top:12px">
+        <span>emoji</span><b id="k-total">—</b>
+        <span>slot terlihat</span><b>5</b>
+        <span>scroll</span><b id="k-scroll">0</b>
+        <span>expand</span><b id="k-more">tetap</b>
+      </div>
     </div>
 
     <h2>Uji ekor</h2>
@@ -132,49 +159,84 @@
         <button class="btn" data-x="0.2" data-y="0.04">Atas (bar ke bawah)</button>
         <button class="btn" data-x="0.2" data-y="0.94">Bawah (bar ke atas)</button>
       </div>
-      <div class="kv" style="margin-top:12px">
-        <span>ketuk x</span><b id="kx">—</b>
-        <span>bar left</span><b id="kbl">—</b>
-        <span>ekor</span><b id="kt">—</b>
-        <span>arah</span><b id="kd">—</b>
-      </div>
     </div>
 
     <h2>Aturan</h2>
     <div class="card">
       <ul>
-        <li>Bar selalu <b>satu baris</b>: 6 emoji + tombol <code>⌄</code>, tidak pernah wrap.</li>
-        <li>Lebar bar tetap <code>≈304px</code>; posisi <code>left</code> dijepit 8px dari tepi foto.</li>
-        <li>Ekor: <code>left = clamp(tapX − barLeft, 18, barW − 18)</code>, jadi selalu di atas titik ketuk walau bar mentok tepi.</li>
-        <li>Bar di atas titik kalau ruang atas ≥ 62px, kalau tidak pindah ke bawah (ekor ikut pindah ke sisi atas).</li>
-        <li>Angka reaksi hanya muncul kalau <code>count &gt; 0</code>, 8.5px, pojok kanan-bawah.</li>
+        <li>Urutan emoji: <b>jumlah reaksi terbanyak dulu</b>; yang belum pernah dipakai di belakang.</li>
+        <li>Counter: 9px, 900, amber-300, <b>di kanan emoji</b> dengan gap 4px — sama dengan panel sekarang.</li>
+        <li>Lebar strip tetap <code>5 × 52px</code>. Emoji ke-6 dan seterusnya hanya bisa dicapai dengan geser horizontal.</li>
+        <li>Tombol <code>⌄</code> di luar area geser, jadi posisinya tidak pernah berubah.</li>
+        <li>Gradien tipis di tepi kanan/kiri hanya penanda masih ada emoji lain.</li>
+        <li>Ekor: <code>left = clamp(tapX − barLeft, 18, barW − 18)</code>.</li>
+        <li>Bar di atas titik kalau ruang atas cukup, kalau tidak pindah ke bawah.</li>
       </ul>
       <pre>left  = clamp(tapX - barW / 2, 8, boxW - barW - 8)
-tailX = clamp(tapX - left, 18, barW - 18)</pre>
+tailX = clamp(tapX - left, 18, barW - 18)
+strip = 5 * 52px + 4 * 2px   /* fixed, sisanya scroll */</pre>
     </div>
   </div>
 
 </div>
 
 <script>
-  const EMOJIS = [["❤️",0],["👍",12],["👎",3],["🔥",48],["🥰",7],["👏",0]];
-  const bar  = document.getElementById('bar');
-  const tail = document.getElementById('tail');
-  const zone = document.getElementById('zone');
-  const box  = document.getElementById('box');
-  const out  = { kx:document.getElementById('kx'), kbl:document.getElementById('kbl'),
-                 kt:document.getElementById('kt'), kd:document.getElementById('kd') };
+  const POOL = [
+    ["❤️", 0], ["👍", 0], ["👎", 0], ["🔥", 0], ["🥰", 0], ["👏", 0],
+    ["😍", 0], ["💦", 0], ["🥵", 0], ["😈", 0], ["💋", 0], ["🫦", 0],
+    ["🤤", 0], ["😳", 0]
+  ];
 
-  bar.innerHTML = '<span class="tail" id="tail"></span>' + EMOJIS.map(([e,n],i) =>
-      '<button class="cell' + (i===3 ? ' mine' : '') + '" aria-label="Reaksi ' + e + '">' +
-        '<span class="e">' + e + '</span>' + (n ? '<span class="n">' + n + '</span>' : '') +
-      '</button>').join('') +
-    '<button class="more" aria-label="Emoji lainnya">⌄</button>';
+  const bar = document.getElementById('bar');
   const tailEl = bar.querySelector('.tail');
+  const strip = document.getElementById('strip');
+  const stripwrap = document.getElementById('stripwrap');
+  const zone = document.getElementById('zone');
+  const box = document.getElementById('box');
+
+  const kTotal = document.getElementById('k-total');
+  const kScroll = document.getElementById('k-scroll');
+
+  let items = [];
+  let last = { x: 0.52, y: 0.55 };
 
   function clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
+  function rand(n) { return Math.floor(Math.random() * n); }
+
+  /** Demo: emoji dengan reaksi > 0 tampil lebih dulu, urut jumlah menurun. */
+  function build(count) {
+    const picked = POOL.slice(0, count).map(([emoji], i) => ({
+      emoji,
+      count: i === 0 ? 0 : rand(60),
+      mine: i === 2
+    }));
+    items = picked.sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji));
+    render();
+  }
+
+  function render() {
+    strip.innerHTML = items.map((it, i) =>
+      '<button class="cell' + (it.mine ? ' mine' : '') + '" data-i="' + i + '"' +
+        ' aria-label="Reaksi ' + it.emoji + (it.count ? ', ' + it.count + ' reaksi' : '') + '">' +
+        '<span class="e">' + it.emoji + '</span>' +
+        (it.count ? '<span class="n">' + it.count + '</span>' : '') +
+      '</button>').join('');
+
+    kTotal.textContent = items.length;
+    strip.scrollLeft = 0;
+    updateEdges();
+    if (bar.classList.contains('show')) place(last.x, last.y);
+  }
+
+  function updateEdges() {
+    const max = strip.scrollWidth - strip.clientWidth;
+    stripwrap.classList.toggle('more-right', strip.scrollLeft < max - 1);
+    stripwrap.classList.toggle('more-left', strip.scrollLeft > 1);
+    kScroll.textContent = Math.round(strip.scrollLeft) + ' / ' + Math.round(max);
+  }
 
   function place(fx, fy) {
+    last = { x: fx, y: fy };
     const boxW = box.clientWidth, boxH = box.clientHeight;
     const tapX = fx * boxW, tapY = fy * boxH;
 
@@ -182,20 +244,15 @@ tailX = clamp(tapX - left, 18, barW - 18)</pre>
     const barW = bar.offsetWidth, barH = bar.offsetHeight;
 
     const above = tapY > barH + 26;
-    const left  = clamp(tapX - barW / 2, 8, boxW - barW - 8);
-    const top   = above ? tapY - barH - 14 : tapY + 14;
+    const left = clamp(tapX - barW / 2, 8, boxW - barW - 8);
+    const top = above ? tapY - barH - 14 : tapY + 14;
     const tailX = clamp(tapX - left, 18, barW - 18);
 
     bar.classList.toggle('above', above);
     bar.classList.toggle('below', !above);
     bar.style.left = left + 'px';
-    bar.style.top  = Math.max(6, Math.min(top, boxH - barH - 6)) + 'px';
+    bar.style.top = Math.max(6, Math.min(top, boxH - barH - 6)) + 'px';
     tailEl.style.left = (tailX - 7) + 'px';
-
-    out.kx.textContent  = Math.round(tapX) + 'px';
-    out.kbl.textContent = Math.round(left) + 'px';
-    out.kt.textContent  = Math.round(tailX) + 'px';
-    out.kd.textContent  = above ? 'bar di atas' : 'bar di bawah';
   }
 
   zone.addEventListener('pointerdown', (e) => {
@@ -203,35 +260,49 @@ tailX = clamp(tapX - left, 18, barW - 18)</pre>
     place((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
   });
 
+  strip.addEventListener('scroll', updateEdges, { passive: true });
+
+  strip.addEventListener('click', (e) => {
+    const cell = e.target.closest('.cell');
+    if (!cell) return;
+    const it = items[+cell.dataset.i];
+    it.count += 1;
+    it.mine = true;
+    items.sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji));
+    render();
+  });
+
+  document.getElementById('more').addEventListener('click', () => {
+    alert('Buka katalog emoji lengkap (ReactionSheet)');
+  });
+
   document.querySelectorAll('[data-x]').forEach((b) => {
     b.addEventListener('click', () => place(+b.dataset.x, +(b.dataset.y ?? 0.55)));
+  });
+
+  document.querySelectorAll('[data-count]').forEach((b) => {
+    b.addEventListener('click', () => build(+b.dataset.count));
+  });
+
+  document.getElementById('shuffle').addEventListener('click', () => {
+    items = items.map((it) => ({ ...it, count: rand(60) }))
+      .sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji));
+    render();
   });
 
   document.querySelectorAll('#variants .btn').forEach((b) => {
     b.addEventListener('click', () => {
       document.querySelectorAll('#variants .btn').forEach((o) => o.classList.remove('on'));
       b.classList.add('on');
-      bar.className = 'bar ' + b.dataset.v + ' show ' + (bar.classList.contains('below') ? 'below' : 'above');
-      const last = bar.dataset.last || '0.5,0.55';
-      place(...last.split(',').map(Number));
+      bar.classList.remove('v-a', 'v-b', 'v-c');
+      bar.classList.add(b.dataset.v);
+      place(last.x, last.y);
     });
   });
 
-  const origPlace = place;
-  place = function (fx, fy) { bar.dataset.last = fx + ',' + fy; return origPlace(fx, fy); };
-
-  // #v-b / #v-c in the URL opens that variant directly.
-  const hash = (location.hash || "").replace("#", "");
-  if (["v-a", "v-b", "v-c"].includes(hash)) {
-    document.querySelectorAll("#variants .btn").forEach((b) => {
-      const on = b.dataset.v === hash;
-      b.classList.toggle("on", on);
-      if (on) bar.classList.remove("v-a", "v-b", "v-c"), bar.classList.add(hash);
-    });
-  }
-
+  build(9);
   setTimeout(() => place(0.52, 0.55), 120);
-  window.addEventListener('resize', () => { const l = (bar.dataset.last||'0.5,0.55').split(',').map(Number); place(l[0], l[1]); });
+  window.addEventListener('resize', () => place(last.x, last.y));
 </script>
 </body>
 </html>

@@ -72,8 +72,8 @@ export async function extractPoster(video: Buffer): Promise<Buffer | null> {
 const TEASER_SECONDS = 3;
 const TEASER_BOX = 480;
 const TEASER_FPS = 15;
-const TEASER_BLUR_SIGMA = 7;
-const NSFW_TEASER_BLUR_SIGMA = 14;
+/** Same strength for 18+ and non-18+; the badge marks the 18+ teaser. */
+const TEASER_BLUR_SIGMA = 14;
 const TEASER_CRF = 32;
 const TEASER_TIMEOUT_MS = 20_000;
 
@@ -116,7 +116,7 @@ export async function extractTeaser(
         ":" +
         TEASER_BOX +
         ":force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,gblur=sigma=" +
-        (options.nsfw ? NSFW_TEASER_BLUR_SIGMA : TEASER_BLUR_SIGMA);
+        TEASER_BLUR_SIGMA;
 
       const args = ["-hide_banner", "-loglevel", "error", "-y", "-i", videoPath];
       if (hasBadge) args.push("-i", badgePath);

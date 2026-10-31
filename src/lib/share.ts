@@ -63,6 +63,16 @@ export function leaderboardPath(period: LeaderboardPeriod): string {
   return period === "all" ? "/leaderboard" : "/leaderboard?period=" + period;
 }
 
+/** Deep link that opens the bot chat and runs /reward straight away. */
+export function rewardUrl(): string {
+  return "https://t.me/" + BOT_USERNAME + "?start=reward";
+}
+
+/** Deep link that opens the bot chat with a report session for one photo. */
+export function reportUrl(photoId: number): string {
+  return "https://t.me/" + BOT_USERNAME + "?start=r_" + photoId;
+}
+
 /** Deep link that opens the Mini App straight on the owner analytics page. */
 export function statsUrl(): string {
   return "https://t.me/" + BOT_USERNAME + "?startapp=" + STATS_START_PARAM;

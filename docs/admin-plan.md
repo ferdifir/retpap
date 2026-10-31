@@ -34,7 +34,7 @@ Satu halaman owner-only untuk dua pekerjaan yang sekarang harus dilakukan manual
   (poster). Foto: 1 file `<slug>.jpg`.
 - Gender **tidak** memengaruhi channel post dan tidak memengaruhi leaderboard —
   hanya filter feed. Jadi ubah gender tidak perlu repost.
-- 18+ memengaruhi channel (blur 32 vs 22 + badge) dan feed (blur + tombol
+- 18+ memengaruhi channel (badge 18+; blur semua post sama) dan feed (blur + tombol
   Tampilkan). Jadi ubah 18+ **harus** repost channel.
 
 ### Yang menempel pada satu foto/video

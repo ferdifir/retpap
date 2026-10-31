@@ -32,6 +32,8 @@ export const users = pgTable("users", {
   photoUrl: text("photo_url"),
   /** Uploader notifications about reactions, comments and ratings. */
   notify: boolean("notify").notNull().default(true),
+  /** Toggled from the bot: new comments are posted without the author name. */
+  anonymous: boolean("anonymous").notNull().default(false),
   /** Set the first time the user talks to the bot; gates the Mini App. */
   startedAt: timestamp("started_at", { withTimezone: true }),
   /** Feed filter chosen once; null until the user picks. */
@@ -221,6 +223,9 @@ export const comments = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
+    /** Snapshot of the author's preference at write time, so old comments
+     *  keep the name they were posted with. */
+    isAnonymous: boolean("is_anonymous").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -410,3 +415,126 @@ export const events = pgTable(
     index("events_session_idx").on(table.sessionId),
   ],
 );
+
+/**
+ * Append-only log of every rating change. `ratings` keeps only the latest
+ * value per (photo, user), so this table is the only way to answer "what did
+ * this user score, and when". It is never read by the leaderboard.
+ */
+export const ratingHistory = pgTable(
+  "rating_history",
+  {
+    id: identity(),
+    photoId: bigint("photo_id", { mode: "number" })
+      .notNull()
+      .references(() => photos.id, { onDelete: "cascade" }),
+    userId: bigint("user_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    score: real("score").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    /** "live" for rows written by ratePhoto, "backfill" for the one-off seed. */
+    source: text("source").notNull().default("live"),
+  },
+  (table) => [
+    index("rating_history_photo_at_idx").on(table.photoId, table.at),
+    index("rating_history_user_at_idx").on(table.userId, table.at),
+    check("rating_history_score_range", sql`${table.score} between 1 and 10`),
+    check(
+      "rating_history_source_valid",
+      sql`${table.source} in ('live', 'backfill')`,
+    ),
+  ],
+);
+
+/**
+ * One monthly Top PAP reward, frozen at the moment the recap was posted.
+ * The unique period_start is the guard: a re-sent recap must never create a
+ * second reward or change the amount.
+ */
+export const rewards = pgTable(
+  "rewards",
+  {
+    id: identity(),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    /** When the recap post went out, which is also the rating cut-off. */
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull(),
+    photoId: bigint("photo_id", { mode: "number" })
+      .notNull()
+      .references(() => photos.id, { onDelete: "cascade" }),
+    /** Uploader; null for seeded content, where the owner claims instead. */
+    userId: bigint("user_id", { mode: "number" }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** Who may claim: the uploader, or the owner for seeded content. */
+    telegramId: bigint("telegram_id", { mode: "number" }).notNull(),
+    avgScore: real("avg_score").notNull(),
+    votes: integer("votes").notNull(),
+    amount: integer("amount").notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    claimedBy: bigint("claimed_by", { mode: "number" }),
+  },
+  (table) => [
+    unique("rewards_period_start").on(table.periodStart),
+    index("rewards_telegram_idx").on(table.telegramId),
+  ],
+);
+
+/**
+ * Snapshot of the winning photo's ratings at cut-off. Kept per voter so the
+ * published average and vote count can be recomputed later.
+ */
+export const rewardVotes = pgTable(
+  "reward_votes",
+  {
+    rewardId: bigint("reward_id", { mode: "number" })
+      .notNull()
+      .references(() => rewards.id, { onDelete: "cascade" }),
+    userId: bigint("user_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    score: real("score").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.rewardId, table.userId] })],
+);
+
+/**
+ * Free-text reports about one photo/video, written by the bot. No reason list
+ * and no rate limit: the owner reads every row in /admin and decides.
+ */
+export const reports = pgTable(
+  "reports",
+  {
+    id: identity(),
+    photoId: bigint("photo_id", { mode: "number" })
+      .notNull()
+      .references(() => photos.id, { onDelete: "cascade" }),
+    userId: bigint("user_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("reports_photo_idx").on(table.photoId),
+    index("reports_created_idx").on(table.createdAt),
+  ],
+);
+
+/**
+ * One pending report per Telegram user: the next plain text from that chat is
+ * stored as the report body. Mirrors upload_sessions so a pm2 reload does not
+ * lose the target photo mid-conversation.
+ */
+export const reportSessions = pgTable("report_sessions", {
+  telegramId: bigint("telegram_id", { mode: "number" }).primaryKey(),
+  photoId: bigint("photo_id", { mode: "number" })
+    .notNull()
+    .references(() => photos.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

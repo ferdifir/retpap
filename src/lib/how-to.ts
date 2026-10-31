@@ -2,7 +2,15 @@
  * Single source of truth for the bot's /howto command. The in-app dialog was
  * removed when the info button became the leaderboard entry point.
  */
-export type HowToTipKey = "tap" | "hold" | "marker" | "rate" | "swipe" | "upload";
+export type HowToTipKey =
+  | "tap"
+  | "hold"
+  | "marker"
+  | "rate"
+  | "swipe"
+  | "upload"
+  | "anon"
+  | "reward";
 
 export type HowToTip = {
   key: HowToTipKey;
@@ -40,6 +48,16 @@ export const HOW_TO_TIPS: readonly HowToTip[] = [
     key: "upload",
     title: "Upload PAP",
     body: "lewat bot: /upload, kirim foto atau video (maks 1 menit, 20 MB), kirim caption, lalu tekan Upload.",
+  },
+  {
+    key: "anon",
+    title: "Komentar anonim",
+    body: "ketik /anon di bot supaya komentar berikutnya tampil tanpa nama.",
+  },
+  {
+    key: "reward",
+    title: "Hadiah Top PAP",
+    body: "PAP peringkat 1 tiap bulan dapat Stars. Klaim lewat /reward sebelum bulan berakhir.",
   },
 ];
 

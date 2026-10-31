@@ -99,11 +99,11 @@ pesan konfirmasi, bukan tombol tambahan, supaya tombol tidak bertambah.
 
 `src/lib/bot/media.ts`:
 
-- Blur channel saat ini `CHANNEL_BLUR_SIGMA = 22`, teaser video `TEASER_BLUR_SIGMA = 7`.
-- Tambah konstanta khusus 18+:
-  - `NSFW_BLUR_SIGMA = 32` untuk foto.
-  - `NSFW_TEASER_BLUR_SIGMA = 14` untuk video teaser.
-- Konten non-18+ tetap memakai nilai lama.
+- Blur channel dipakai sama untuk 18+ dan non-18+: `CHANNEL_BLUR_SIGMA = 32`
+  (foto dan cover video), `TEASER_BLUR_SIGMA = 14` (teaser video).
+- Nilai ini yang sebelumnya hanya dipakai konten 18+; sekarang semua post channel.
+- Pembeda 18+ hanya badge `18+`, bukan kekuatan blur.
+- Kalau blur gagal, media asli tetap dikirim dengan `has_spoiler`, 18+ atau bukan.
 
 ### Badge 18+
 

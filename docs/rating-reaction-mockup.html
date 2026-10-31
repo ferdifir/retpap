@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup reaksi rating RetPAP</title>
+<style>
+  :root{color-scheme:dark;--ink:#e2e8f0;--muted:#94a3b8;--line:rgba(148,163,184,.18);--cyan:#22d3ee;--yellow:#facc15}
+  *{box-sizing:border-box}html,body{margin:0;background:radial-gradient(ellipse at 15% 0%,rgba(34,211,238,.09),transparent 38%),#070b14;color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  .wrap{max-width:1080px;margin:auto;padding:34px 20px 70px}h1{font-size:20px;margin:0 0 7px;letter-spacing:-.02em}.sub{max-width:72ch;margin:0;color:var(--muted);font-size:12px;line-height:1.7}h2{margin:34px 0 12px;color:#a7b7cb;font-size:10px;letter-spacing:.13em;text-transform:uppercase}
+  .concept{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:16px;margin-top:24px}.concept-main,.concept-note,.card,.preview{border:1px solid var(--line);border-radius:18px;background:linear-gradient(160deg,rgba(30,41,59,.58),rgba(15,23,42,.78))}.concept-main{padding:18px 20px}.concept-main strong{font-size:13px}.concept-main p,.concept-note p{margin:6px 0 0;color:var(--muted);font-size:11px;line-height:1.7}.concept-note{padding:18px}.concept-note b{font-size:11px}.concept-note p{font-size:10px}
+  .grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.card{min-width:0;padding:12px 8px 11px;display:flex;flex-direction:column;align-items:center;gap:2px;transition:border-color .18s,background .18s,transform .18s}.card.selected{border-color:rgba(34,211,238,.8);background:linear-gradient(160deg,rgba(8,145,178,.22),rgba(15,23,42,.9));transform:translateY(-2px)}.level{font-size:9px;color:var(--muted);font-weight:800;letter-spacing:.1em}.caption{font-size:10px;color:#cbd5e1}
+  .achievement-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.achievement-card{position:relative;min-height:164px;padding:10px 8px 12px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(160deg,rgba(30,41,59,.62),rgba(15,23,42,.92));display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;transition:border-color .18s,transform .18s,background .18s}.achievement-card.selected{border-color:rgba(250,204,21,.85);background:linear-gradient(160deg,rgba(161,98,7,.25),rgba(15,23,42,.94));transform:translateY(-2px)}.badge-stage{position:absolute;top:3px;left:50%;width:116px;height:116px;transform:translateX(-50%);display:grid;place-items:center}.badge-svg{width:100%;height:100%;overflow:visible;filter:drop-shadow(0 5px 8px rgba(0,0,0,.32))}.badge-mascot{position:absolute;z-index:2;width:31px;height:31px;right:1px;bottom:1px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,.38));animation:mascot-react 1.35s ease-in-out infinite}.achievement-level{font-size:9px;color:#94a3b8;font-weight:800;letter-spacing:.12em}.achievement-name{font-size:10px;color:#e2e8f0;text-align:center;line-height:1.2;font-weight:700}
+  .demo{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:14px;align-items:stretch}.preview{position:relative;overflow:hidden;min-height:360px;background:#111827}.preview>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(.8)}.preview:after{content:"";position:absolute;inset:45% 0 0;background:linear-gradient(transparent,rgba(2,6,23,.78))}.app-top{position:absolute;z-index:1;left:15px;right:15px;top:14px;display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:750;text-shadow:0 1px 6px #020617}.brand{display:flex;align-items:center;gap:7px}.brand-mark{width:20px;height:20px;border:2px solid var(--cyan);border-radius:50%;display:grid;place-items:center;color:var(--yellow);font-size:10px}.photo-copy{position:absolute;z-index:1;left:18px;bottom:18px;font-size:11px;color:#fff;text-shadow:0 1px 8px #020617}.photo-copy small{display:block;color:#cbd5e1;margin-top:4px}
+  .rating-overlay{position:absolute;z-index:2;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,.2);backdrop-filter:blur(1px)}.rating-panel{width:186px;border:1px solid rgba(255,255,255,.24);border-radius:23px;background:rgba(15,23,42,.74);box-shadow:0 18px 50px rgba(0,0,0,.3);backdrop-filter:blur(16px);padding:14px 16px 12px;text-align:center}.rating-label{font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:#cbd5e1;font-weight:800}.rating-value{font-size:42px;line-height:1.1;font-variant-numeric:tabular-nums;font-weight:900;letter-spacing:-.05em}.rating-response{font-size:10px;color:#f1f5f9;font-weight:650}
+  .header-achievement{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 4px;border:1px solid rgba(255,255,255,.25);border-radius:999px;background:rgba(2,6,23,.65);backdrop-filter:blur(12px);text-shadow:none}.header-achievement .badge-stage{position:relative;top:auto;left:auto;width:38px;height:42px;transform:none;flex:none}.header-achievement .badge-svg{width:38px;height:42px;flex:none}.badge-header-mascot{position:absolute;z-index:2;width:14px;height:14px;right:-1px;bottom:1px;object-fit:contain;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));animation:mascot-react 1.35s ease-in-out infinite}.header-achievement-copy{display:flex;flex-direction:column;gap:1px}.header-achievement-copy b{font-size:9px;color:#f8fafc;white-space:nowrap}.header-achievement-copy span{font-size:8px;color:#cbd5e1;white-space:nowrap}
+  .mascot-wrap{position:relative;display:inline-grid;place-items:center;width:var(--size);height:var(--size);vertical-align:middle}.mascot-image{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 5px 9px rgba(0,0,0,.28));transform-origin:50% 88%;animation:mascot-react var(--speed) ease-in-out infinite}.mascot-spark{position:absolute;top:12%;width:9%;aspect-ratio:1;background:#fde047;clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%);opacity:0;pointer-events:none}.mascot-spark.left{left:7%}.mascot-spark.right{right:7%;top:8%;animation-delay:.35s}.mascot-wrap[data-level="7"] .mascot-spark,.mascot-wrap[data-level="8"] .mascot-spark,.mascot-wrap[data-level="9"] .mascot-spark,.mascot-wrap[data-level="10"] .mascot-spark{animation:mascot-sparkle 1.3s ease-in-out infinite}.mascot-wrap[data-level="8"] .mascot-spark.right,.mascot-wrap[data-level="9"] .mascot-spark.right,.mascot-wrap[data-level="10"] .mascot-spark.right{animation-delay:.4s}
+  @keyframes mascot-react{0%,100%{transform:translateY(0) rotate(-1deg) scale(1)}48%{transform:translateY(calc(var(--bounce)*-1)) rotate(1deg) scale(1.04)}72%{transform:translateY(1px) scale(.99,1.02)}}@keyframes mascot-sparkle{0%,100%{opacity:.12;transform:scale(.65) rotate(-20deg)}50%{opacity:1;transform:scale(1.25) rotate(25deg)}}@media(prefers-reduced-motion:reduce){.mascot-image,.mascot-spark{animation:none!important}}
+  .controls{border:1px solid var(--line);border-radius:18px;padding:19px;background:linear-gradient(160deg,rgba(30,41,59,.58),rgba(15,23,42,.78));display:flex;flex-direction:column;justify-content:center}.controls h3{font-size:12px;margin:0 0 3px}.controls p{font-size:10px;color:var(--muted);line-height:1.6;margin:0}.scale{display:flex;justify-content:space-between;color:#94a3b8;font-size:9px;margin:20px 0 5px}.range{width:100%;accent-color:#22d3ee}.ticks{display:grid;grid-template-columns:repeat(10,1fr);margin-top:5px;color:#64748b;font-size:8px;text-align:center}.live{margin-top:22px;padding:12px;border:1px solid var(--line);border-radius:13px;background:rgba(2,6,23,.38);display:flex;align-items:center;gap:10px}.live svg{width:48px;height:48px;flex:none}.live strong{font-size:11px;display:block}.live span{font-size:9px;color:var(--muted)}.note{margin-top:14px;color:#64748b;font-size:9px;line-height:1.7}
+  @media(max-width:700px){.concept,.demo{grid-template-columns:1fr}.grid,.achievement-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.card:last-child{grid-column:span 2}.preview{min-height:340px}.wrap{padding:24px 14px 50px}}
+  @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}.mascot-image,.mascot-spark,.badge-mascot,.badge-header-mascot{animation:none!important}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>Reaksi yang berubah mengikuti nilai rating</h1>
+  <p class="sub">Sepuluh reaksi berbeda dari karakter pilihan: dari lesu pada rating rendah sampai ekspresi wink dan jempol pada rating tertinggi. Geser slider untuk melihat ekspresi serta gerak karakter berubah.</p>
+  <section class="concept">
+    <div class="concept-main"><strong>Konsep: satu karakter, sepuluh reaksi</strong><p>Siluet, warna, dan mata berbintang menjaga identitas karakter. Ekspresi dan pose berubah di setiap level: kecewa, ragu, penasaran, senang, kagum, lalu wink dan jempol pada rating 10.</p></div>
+    <aside class="concept-note"><b>Yang ingin disampaikan</b><p>“Seberapa kuat foto ini membuatku bereaksi?” Icon menjadi ekspresi visual dari rating, bukan objek abstrak yang maknanya harus ditebak.</p></aside>
+  </section>
+  <h2>Perjalanan visual 1—10</h2>
+  <div class="grid" id="grid"></div>
+  <h2>Achievement di header · medali jadi fokus</h2>
+  <p class="sub">Setiap nilai memiliki insignia sendiri. Bintang dan medali menjadi elemen utama; maskot kecil hanya menemani sebagai aksen.</p>
+  <div class="achievement-grid" id="achievement-grid"></div>
+  <h2>Contoh saat memberi rating</h2>
+  <section class="demo">
+    <div class="preview">
+      <img src="../public/foto.jpg" alt="Contoh foto di feed RetPAP">
+      <div class="app-top"><span class="brand"><i class="brand-mark">✦</i> RetPAP</span><div class="header-achievement" id="header-achievement"></div></div>
+      <div class="rating-overlay"><div class="rating-panel"><div class="rating-label">Ratingmu</div><div class="rating-value" id="score">8.5</div><div id="hero-icon"></div><div class="rating-response" id="response">Wah, keren!</div></div></div>
+      <div class="photo-copy">Foto komunitas <small>Geser untuk memberi nilai</small></div>
+    </div>
+    <div class="controls">
+      <h3>Atur nilai rating</h3><p>Geser slider untuk melihat gerak dan energi karakter berubah mengikuti rating.</p>
+      <div class="scale"><span>Kurang menarik</span><span>Sangat menarik</span></div>
+      <input class="range" id="range" type="range" min="1" max="10" value="8.5" step="0.5" aria-label="Nilai rating">
+      <div class="ticks"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span></div>
+      <div class="live"><div id="mini-icon"></div><div><strong id="live-title">Sangat terkesan</strong><span>Icon ikut bergerak mengikuti nilai</span></div></div>
+      <p class="note">Mockup interaktif saja. Slider mengubah reaksi karakter pada overlay dan achievement di header. Pada achievement, insignia paling menonjol; maskot hanya aksen.</p>
+    </div>
+  </section>
+</main>
+<script>
+  const labels=["Kurang tertarik","Kurang tertarik","Ragu-ragu","Mulai tertarik","Lumayan","Suka","Terpukau","Wah, keren!","Wah, keren!","Luar biasa!"];
+  const titles=["Lesu","Masih ragu","Mulai tertarik","Suka","Terkesan","Terpukau","Antusias","Sangat terkesan","Takjub","Luar biasa"];
+  const achievementTitles=["Awal Mula","Pendatang Baru","Mulai Bersinar","Bintang Perunggu","Bintang Perak","Bintang Emas","Favorit PAP","Ikon PAP","Superstar","Legenda RetPAP"];
+  function mascot(level,size=100){
+    const bounce=(1+level*.55).toFixed(1), speed=Math.max(.68,1.8-level*.11).toFixed(2);
+    const pose=level===10?"rating-mascot.png":`rating-mascot-${String(level).padStart(2,"0")}.png`;
+    return `<span class="mascot-wrap" data-level="${level}" style="--size:${size}px;--bounce:${bounce}px;--speed:${speed}s"><img class="mascot-image" src="./${pose}" alt=""><i class="mascot-spark left"></i><i class="mascot-spark right"></i></span>`;
+  }
+  function starPoints(cx,cy,outer,inner,points){
+    return Array.from({length:points*2},(_,i)=>{const angle=-Math.PI/2+i*Math.PI/points,r=i%2===0?outer:inner;return `${(cx+Math.cos(angle)*r).toFixed(1)},${(cy+Math.sin(angle)*r).toFixed(1)}`}).join(" ");
+  }
+  function achievementBadge(level){
+    const theme=level<=1?{edge:"#22d3ee",dark:"#0e7490",light:"#cffafe"}:level<=4?{edge:"#f59e0b",dark:"#92400e",light:"#fde68a"}:level===5?{edge:"#cbd5e1",dark:"#475569",light:"#f8fafc"}:level<=7?{edge:"#facc15",dark:"#a16207",light:"#fef08a"}:level<=9?{edge:"#c4b5fd",dark:"#6d28d9",light:"#f5f3ff"}:{edge:"#fde047",dark:"#b45309",light:"#fff7ad"};
+    const gear=starPoints(50,51,32,level===1?24:level<4?27:level<8?28:30,level===1?5:level<4?8:12);
+    const ribbons=level>=3?`<path d="M34 69L30 99L44 91L50 101L54 70Z" fill="${theme.dark}" stroke="${theme.edge}" stroke-width="2"/><path d="M66 69L70 99L56 91L50 101L46 70Z" fill="${theme.dark}" stroke="${theme.edge}" stroke-width="2"/>`:"";
+    const laurels=level>=6?`<g fill="none" stroke="${theme.edge}" stroke-width="2.7" stroke-linecap="round"><path d="M23 66Q9 47 23 29M77 66Q91 47 77 29"/><path d="M18 55l8-1m-6-10 8 2m-3-11 7 4m50 16-8-1m6-10-8 2m3-11-7 4"/></g>`:"";
+    const rays=level>=9?Array.from({length:8},(_,i)=>`<path d="M50 13V${i%2?4:0}" stroke="${theme.edge}" stroke-width="${i%2?2:3}" stroke-linecap="round" transform="rotate(${i*45} 50 48)"/>`).join(""):"";
+    const crown=level>=8?`<path d="M34 22L31 9L42 17L50 5L58 17L69 9L66 22Z" fill="url(#metal-${level})" stroke="${theme.edge}" stroke-width="2.5" stroke-linejoin="round"/><circle cx="31" cy="8" r="2.4" fill="${theme.light}"/><circle cx="50" cy="4.5" r="2.8" fill="${theme.light}"/><circle cx="69" cy="8" r="2.4" fill="${theme.light}"/>`:"";
+    const extra=level===10?`<path d="M20 70Q50 91 80 70" fill="none" stroke="${theme.light}" stroke-width="3" stroke-linecap="round"/>`:"";
+    return `<svg class="badge-svg" viewBox="0 0 100 108" aria-hidden="true"><defs><linearGradient id="metal-${level}" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.light}"/><stop offset=".55" stop-color="${theme.edge}"/><stop offset="1" stop-color="${theme.dark}"/></linearGradient></defs>${rays}${ribbons}${laurels}${crown}<polygon points="${gear}" fill="url(#metal-${level})" stroke="${theme.edge}" stroke-width="3" stroke-linejoin="round"/><circle cx="50" cy="51" r="22" fill="${theme.dark}" stroke="${theme.light}" stroke-width="2.5"/><polygon points="${starPoints(50,44,13,6,5)}" fill="${theme.light}"/><text x="50" y="70" text-anchor="middle" fill="white" font-size="13" font-weight="900" font-family="ui-sans-serif,system-ui">${level}</text>${extra}</svg>`;
+  }
+  function achievementMarkup(level,header=false){
+    const size=header?"badge-header-mascot":"badge-mascot";
+    const art=`<span class="badge-stage">${achievementBadge(level)}<img class="${size}" src="./rating-mascot.png" alt=""></span>`;
+    return header?`${art}<span class="header-achievement-copy"><b>${achievementTitles[level-1]}</b><span>Level ${level} achievement</span></span>`:art;
+  }
+  const grid=document.querySelector('#grid');
+  for(let i=1;i<=10;i++){const card=document.createElement('div');card.className='card';card.dataset.level=i;card.innerHTML=`${mascot(i,88)}<span class="level">${String(i).padStart(2,'0')}</span><span class="caption">${titles[i-1]}</span>`;grid.append(card)}
+  const achievementGrid=document.querySelector('#achievement-grid');
+  for(let i=1;i<=10;i++){const card=document.createElement('div');card.className='achievement-card';card.dataset.achievementLevel=i;card.innerHTML=`${achievementMarkup(i)}<span class="achievement-level">LEVEL ${String(i).padStart(2,'0')}</span><span class="achievement-name">${achievementTitles[i-1]}</span>`;achievementGrid.append(card)}
+  const range=document.querySelector('#range');
+  function update(){const score=Number(range.value),level=Math.max(1,Math.min(10,Math.round(score)));document.querySelector('#score').textContent=score.toFixed(1);document.querySelector('#response').textContent=labels[level-1];document.querySelector('#hero-icon').innerHTML=mascot(level,78);document.querySelector('#mini-icon').innerHTML=mascot(level,48);document.querySelector('#live-title').textContent=titles[level-1];document.querySelector('#header-achievement').innerHTML=achievementMarkup(level,true);document.querySelectorAll('.card').forEach(c=>c.classList.toggle('selected',Number(c.dataset.level)===level));document.querySelectorAll('.achievement-card').forEach(c=>c.classList.toggle('selected',Number(c.dataset.achievementLevel)===level))}
+  range.addEventListener('input',update);update();
+</script>
+</body>
+</html>

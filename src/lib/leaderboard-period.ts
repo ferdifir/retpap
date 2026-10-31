@@ -125,3 +125,23 @@ export function isLastWibDayOfMonth(now: Date): boolean {
   const tomorrow = new Date(shifted.getTime() + 24 * 60 * 60 * 1000);
   return tomorrow.getUTCMonth() !== shifted.getUTCMonth();
 }
+
+/** Day of the month (WIB) the monthly recap goes out; 0 means "last day". */
+function monthlyAnnounceDay(): number {
+  const raw = Number(process.env.LEADERBOARD_MONTHLY_DAY);
+  return Number.isInteger(raw) && raw >= 1 && raw <= 31 ? raw : 0;
+}
+
+/**
+ * Monthly recaps normally wait for the last day, but the owner can move them
+ * earlier (e.g. the 30th) with LEADERBOARD_MONTHLY_DAY. A month without that
+ * date falls back to its last day.
+ */
+export function isMonthlyAnnounceDay(now: Date): boolean {
+  const day = monthlyAnnounceDay();
+  if (day === 0) return isLastWibDayOfMonth(now);
+
+  const { year, month } = wibParts(now);
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return wibParts(now).day === Math.min(day, lastDay);
+}

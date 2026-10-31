@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
-import { commentNotificationBody } from "@/lib/bot/format";
+import { anonymousCommentNotificationBody, commentNotificationBody } from "@/lib/bot/format";
 import {
   LEADERBOARD_PERIODS,
   leaderboardWindow,
@@ -16,8 +16,11 @@ import {
   leaderboardAnnouncements,
   notifications,
   photos,
+  ratingHistory,
   ratings,
   reactions,
+  rewardVotes,
+  rewards,
   spots,
   users,
 } from "./schema";
@@ -318,6 +321,7 @@ async function resolveSpot(
   tx: Tx,
   photo: { id: number; imageWidth: number; imageHeight: number },
   input: SpotTarget,
+  kind: "reaction" | "comment",
 ): Promise<
   | { ok: true; spotId: number }
   | { ok: false; reason: "spot_not_found" | "invalid_target" }
@@ -335,12 +339,24 @@ async function resolveSpot(
     return { ok: false, reason: "invalid_target" };
   }
 
-  const existing = await tx
-    .select()
-    .from(spots)
-    .where(eq(spots.photoId, photo.id));
+  // A spot holds either reactions or comments, never both, so snapping only
+  // considers spots of the same kind.
+  const [existing, used] = await Promise.all([
+    tx.select().from(spots).where(eq(spots.photoId, photo.id)),
+    kind === "reaction"
+      ? tx
+          .selectDistinct({ id: reactions.spotId })
+          .from(reactions)
+          .where(eq(reactions.photoId, photo.id))
+      : tx
+          .selectDistinct({ id: comments.spotId })
+          .from(comments)
+          .where(eq(comments.photoId, photo.id)),
+  ]);
+  const sameKind = new Set(used.map((row) => row.id));
+
   const snapped = findSpotAt(
-    existing,
+    existing.filter((spot) => sameKind.has(spot.id)),
     input.x,
     input.y,
     photo.imageHeight / photo.imageWidth,
@@ -396,7 +412,7 @@ export async function reactToPhoto(
       return { ok: false, reason: "unknown_emoji" } as const;
     }
 
-    const resolved = await resolveSpot(tx, photo, input);
+    const resolved = await resolveSpot(tx, photo, input, "reaction");
     if (!resolved.ok) return resolved;
     const spotId = resolved.spotId;
 
@@ -444,18 +460,31 @@ export async function ratePhoto(
 ) {
   const { db } = getDb();
 
-  await db
-    .insert(ratings)
-    .values({ photoId, userId, score })
-    .onConflictDoUpdate({
-      target: [ratings.photoId, ratings.userId],
-      set: { score, updatedAt: new Date() },
-    });
+  const rows = await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ score: ratings.score })
+      .from(ratings)
+      .where(and(eq(ratings.photoId, photoId), eq(ratings.userId, userId)));
 
-  const rows = await db
-    .select({ score: ratings.score })
-    .from(ratings)
-    .where(eq(ratings.photoId, photoId));
+    await tx
+      .insert(ratings)
+      .values({ photoId, userId, score })
+      .onConflictDoUpdate({
+        target: [ratings.photoId, ratings.userId],
+        set: { score, updatedAt: new Date() },
+      });
+
+    // Only real changes are logged: the slider can send the same value twice,
+    // and a repeated value would make the history look like a new decision.
+    if (existing?.score !== score) {
+      await tx.insert(ratingHistory).values({ photoId, userId, score });
+    }
+
+    return tx
+      .select({ score: ratings.score })
+      .from(ratings)
+      .where(eq(ratings.photoId, photoId));
+  });
   const sum = rows.reduce((total, row) => total + row.score, 0);
 
   return {
@@ -726,6 +755,24 @@ export async function setNotifyByTelegram(
     .where(eq(users.telegramId, telegramId));
 }
 
+/** Flips the anonymous-comment switch and reports the new state. */
+export async function toggleAnonymousByTelegram(
+  telegramId: number,
+): Promise<boolean> {
+  const { db } = getDb();
+  const [row] = await db
+    .select({ anonymous: users.anonymous })
+    .from(users)
+    .where(eq(users.telegramId, telegramId));
+
+  const next = !(row?.anonymous ?? false);
+  await db
+    .update(users)
+    .set({ anonymous: next })
+    .where(eq(users.telegramId, telegramId));
+  return next;
+}
+
 /** Flips the switch and reports the new state. */
 export async function toggleNotifyByTelegram(
   telegramId: number,
@@ -881,8 +928,15 @@ export async function addComment(
       .for("update");
     if (!photo) return { ok: false, reason: "invalid_target" } as const;
 
-    const resolved = await resolveSpot(tx, photo, input);
+    const resolved = await resolveSpot(tx, photo, input, "comment");
     if (!resolved.ok) return resolved;
+
+    const [author] = await tx
+      .select()
+      .from(users)
+      .where(eq(users.id, userId));
+    // Snapshot: toggling later must not expose comments posted anonymously.
+    const isAnonymous = author?.anonymous === true;
 
     const [mine] = await tx
       .select()
@@ -896,6 +950,7 @@ export async function addComment(
         .set({
           spotId: resolved.spotId,
           body: input.body,
+          isAnonymous,
           createdAt: new Date(),
         })
         .where(eq(comments.id, mine.id));
@@ -911,6 +966,7 @@ export async function addComment(
         spotId: resolved.spotId,
         userId,
         body: input.body,
+        isAnonymous,
       })
       .returning({ id: comments.id });
 
@@ -920,10 +976,6 @@ export async function addComment(
         .select()
         .from(users)
         .where(eq(users.id, photo.userId));
-      const [author] = await tx
-        .select()
-        .from(users)
-        .where(eq(users.id, userId));
 
       if (owner?.notify && author) {
         await tx
@@ -933,14 +985,16 @@ export async function addComment(
             photoId,
             kind: "comment",
             dedupeKey: "comment:" + inserted.id,
-            body: commentNotificationBody(
-              {
-                firstName: author.firstName,
-                username: author.username,
-                telegramId: author.telegramId,
-              },
-              input.body,
-            ),
+            body: isAnonymous
+              ? anonymousCommentNotificationBody(input.body)
+              : commentNotificationBody(
+                  {
+                    firstName: author.firstName,
+                    username: author.username,
+                    telegramId: author.telegramId,
+                  },
+                  input.body,
+                ),
           })
           .onConflictDoNothing();
       }
@@ -987,6 +1041,7 @@ export async function getSpotComments(
       body: comments.body,
       createdAt: comments.createdAt,
       userId: comments.userId,
+      isAnonymous: comments.isAnonymous,
       firstName: users.firstName,
       username: users.username,
     })
@@ -1001,7 +1056,10 @@ export async function getSpotComments(
     body: row.body,
     createdAt: row.createdAt.toISOString(),
     mine: row.userId === userId,
-    author: { firstName: row.firstName, username: row.username },
+    // Anonymous authors are masked for everyone, including the uploader.
+    author: row.isAnonymous
+      ? { firstName: "Anonim", username: null }
+      : { firstName: row.firstName, username: row.username },
   }));
 }
 
@@ -1017,51 +1075,6 @@ export async function markChannelPost(
     .where(eq(photos.id, photoId));
 }
 
-export type NsfwPhoto = {
-  slug: string;
-  caption: string;
-  mediaType: "photo" | "video";
-  channelMessageId: number | null;
-  isActive: boolean;
-  /** True when the row was already 18+ before this call. */
-  wasNsfw: boolean;
-};
-
-/**
- * Marks a photo 18+. The owner action also needs the stored file data so the
- * channel post can be rebuilt, hence the returned row.
- */
-export async function markPhotoNsfw(photoId: number): Promise<NsfwPhoto | null> {
-  const { db } = getDb();
-
-  const [row] = await db
-    .select({
-      slug: photos.slug,
-      caption: photos.caption,
-      mediaType: photos.mediaType,
-      channelMessageId: photos.channelMessageId,
-      isActive: photos.isActive,
-      isNsfw: photos.isNsfw,
-    })
-    .from(photos)
-    .where(eq(photos.id, photoId));
-
-  if (!row) return null;
-
-  if (!row.isNsfw) {
-    await db.update(photos).set({ isNsfw: true }).where(eq(photos.id, photoId));
-  }
-
-  return {
-    slug: row.slug,
-    caption: row.caption,
-    mediaType: row.mediaType === "video" ? "video" : "photo",
-    channelMessageId: row.channelMessageId,
-    isActive: row.isActive,
-    wasNsfw: row.isNsfw,
-  };
-}
-
 export async function getUserTelegramId(
   userId: number,
 ): Promise<number | null> {
@@ -1075,43 +1088,123 @@ export async function getUserTelegramId(
   return row?.telegramId ?? null;
 }
 
-export type RemovedPhoto = {
-  slug: string;
-  channelMessageId: number | null;
-  uploaderTelegramId: number | null;
+export type MonthlyReward = {
+  id: number;
+  photoId: number;
+  caption: string;
+  avgScore: number;
+  votes: number;
+  amount: number;
+  telegramId: number;
+  periodStart: Date;
+  periodEnd: Date;
+  decidedAt: Date;
+  claimedAt: Date | null;
+  claimedBy: number | null;
 };
 
 /**
- * Hides a photo from the feed (getFeed only reads active rows) and returns what
- * the bot still has to clean up: the channel post and the uploader notice.
+ * Freezes the monthly winner. Called once, right after the recap post lands.
+ * Returns null when a reward for that period already exists, which is what
+ * makes a re-sent recap harmless.
  */
-export async function deactivatePhoto(
-  photoId: number,
-): Promise<RemovedPhoto | null> {
+export async function createMonthlyReward(input: {
+  periodStart: Date;
+  periodEnd: Date;
+  decidedAt: Date;
+  photoId: number;
+  userId: number | null;
+  telegramId: number;
+  avgScore: number;
+  votes: number;
+  amount: number;
+}): Promise<number | null> {
   const { db } = getDb();
 
   return db.transaction(async (tx) => {
-    const [row] = await tx
-      .select({
-        slug: photos.slug,
-        channelMessageId: photos.channelMessageId,
-        uploaderTelegramId: users.telegramId,
-      })
-      .from(photos)
-      .leftJoin(users, eq(users.id, photos.userId))
-      .where(and(eq(photos.id, photoId), eq(photos.isActive, true)));
+    const [inserted] = await tx
+      .insert(rewards)
+      .values(input)
+      .onConflictDoNothing({ target: [rewards.periodStart] })
+      .returning({ id: rewards.id });
 
-    if (!row) return null;
+    if (!inserted) return null;
 
-    await tx
-      .update(photos)
-      .set({ isActive: false })
-      .where(eq(photos.id, photoId));
+    // Per-voter copy: the published average must stay reproducible even after
+    // the ratings themselves are changed.
+    const votes = await tx
+      .select({ userId: ratings.userId, score: ratings.score })
+      .from(ratings)
+      .where(eq(ratings.photoId, input.photoId));
 
-    return {
-      slug: row.slug,
-      channelMessageId: row.channelMessageId,
-      uploaderTelegramId: row.uploaderTelegramId,
-    };
+    if (votes.length > 0) {
+      await tx
+        .insert(rewardVotes)
+        .values(
+          votes.map((vote) => ({
+            rewardId: inserted.id,
+            userId: vote.userId,
+            score: vote.score,
+          })),
+        )
+        .onConflictDoNothing();
+    }
+
+    return inserted.id;
   });
+}
+
+export async function getMonthlyReward(
+  periodStart: Date,
+): Promise<MonthlyReward | null> {
+  const { db } = getDb();
+
+  const [row] = await db
+    .select({
+      id: rewards.id,
+      photoId: rewards.photoId,
+      caption: photos.caption,
+      avgScore: rewards.avgScore,
+      votes: rewards.votes,
+      amount: rewards.amount,
+      telegramId: rewards.telegramId,
+      periodStart: rewards.periodStart,
+      periodEnd: rewards.periodEnd,
+      decidedAt: rewards.decidedAt,
+      claimedAt: rewards.claimedAt,
+      claimedBy: rewards.claimedBy,
+    })
+    .from(rewards)
+    .innerJoin(photos, eq(photos.id, rewards.photoId))
+    .where(eq(rewards.periodStart, periodStart));
+
+  return row ?? null;
+}
+
+/** Atomic claim: the conditional update is what stops a double claim. */
+export async function claimMonthlyReward(
+  id: number,
+  telegramId: number,
+): Promise<boolean> {
+  const { db } = getDb();
+
+  const [row] = await db
+    .update(rewards)
+    .set({ claimedAt: new Date(), claimedBy: telegramId })
+    .where(and(eq(rewards.id, id), isNull(rewards.claimedAt)))
+    .returning({ id: rewards.id });
+
+  return row !== undefined;
+}
+
+/** Uploader of a photo, or null for seeded content. */
+export async function getPhotoUploader(photoId: number): Promise<number | null> {
+  const { db } = getDb();
+
+  const [row] = await db
+    .select({ userId: photos.userId })
+    .from(photos)
+    .where(eq(photos.id, photoId));
+
+  return row?.userId ?? null;
 }

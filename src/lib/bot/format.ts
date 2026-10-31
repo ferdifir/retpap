@@ -30,6 +30,11 @@ export function commentNotificationBody(author: MentionUser, body: string): stri
   );
 }
 
+/** Anonymous comments reach the uploader without any author hint. */
+export function anonymousCommentNotificationBody(body: string): string {
+  return "💬 <b>Seseorang</b> mengomentari fotomu:\n\n<i>" + escapeHtml(body) + "</i>";
+}
+
 export function digestNotificationBody(counts: {
   reactions: number;
   ratings: number;
@@ -41,4 +46,62 @@ export function digestNotificationBody(counts: {
   if (counts.comments > 0) parts.push(counts.comments + " komentar baru");
 
   return "📣 Fotomu dapat " + parts.join(", ") + " dalam 15 menit terakhir.";
+}
+
+/** Confirmation for the winner who just claimed the monthly reward. */
+export function rewardClaimText(reward: {
+  caption: string;
+  avgScore: number;
+  votes: number;
+  amount: number;
+}): string {
+  const avg = reward.avgScore.toFixed(1);
+  const raw = (reward.avgScore * reward.votes).toFixed(1);
+
+  return [
+    "🏆 <b>Hadiah Top PAP</b>",
+    "",
+    '"<i>' + escapeHtml(reward.caption) + '</i>"',
+    avg + "/10 · " + reward.votes + " rating",
+    avg + " × " + reward.votes + " = " + raw + " → <b>" + reward.amount + " Stars</b>",
+    "",
+    "Klaim tercatat. Stars dikirim manual oleh owner.",
+  ].join("\n");
+}
+
+/** DM to the owner so the Stars transfer can be made by hand. */
+export function rewardClaimOwnerNotice(input: {
+  claimant: MentionUser;
+  caption: string;
+  avgScore: number;
+  votes: number;
+  amount: number;
+}): string {
+  return [
+    "🏆 <b>Klaim hadiah</b>",
+    "",
+    userLink(input.claimant) + " (id " + input.claimant.telegramId + ")",
+    input.amount + " Stars · " + input.avgScore.toFixed(1) + " × " + input.votes,
+    '"<i>' + escapeHtml(input.caption) + '</i>"',
+  ].join("\n");
+}
+
+/**
+ * Shown to anyone who is not the recipient. It names the winner (already public
+ * in the channel) instead of exposing whether the prize was claimed, so a
+ * stranger never sees someone else's claim status.
+ */
+export function rewardNotEligibleText(reward: {
+  caption: string;
+  avgScore: number;
+  votes: number;
+}): string {
+  return [
+    "🎁 <b>Hadiah bulan ini untuk pemilik PAP</b>",
+    "",
+    '"<i>' + escapeHtml(reward.caption) + '</i>" (' +
+      reward.avgScore.toFixed(1) + "/10 · " + reward.votes + " rating)",
+    "",
+    "Kamu belum termasuk penerima. Pemenang Top PAP adalah peringkat 1 bulan berjalan.",
+  ].join("\n");
 }

@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup zoom foto/video — RetPAP</title>
+<style>
+  :root { --cyan:#22d3ee; --amber:#fbbf24; --line:rgba(148,163,184,.22); }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:#070b14; color:#e2e8f0;
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { display:grid; grid-template-columns:minmax(0,420px) minmax(0,430px);
+    gap:36px; padding:32px; align-items:start; justify-content:center; }
+  @media (max-width:960px) { .wrap { grid-template-columns:minmax(0,420px); } }
+  h1 { font-size:16px; margin:0 0 4px; }
+  p.lead { margin:0 0 16px; font-size:12px; line-height:1.6; color:#94a3b8; }
+  h2 { font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#64748b;
+    margin:20px 0 8px; }
+
+  /* ---------------- phone ---------------- */
+  .phone { position:relative; width:390px; height:844px; border-radius:34px; overflow:hidden;
+    background:#0b1220; border:1px solid #1e293b; box-shadow:0 30px 80px rgba(0,0,0,.6);
+    display:flex; flex-direction:column; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:14px 16px 10px; }
+  .brand { display:flex; align-items:center; gap:8px; font-weight:800; font-size:13px; }
+  .brand i { display:block; width:18px; height:18px; border-radius:6px;
+    background:linear-gradient(135deg,#22d3ee,#3b82f6); }
+  .score { display:flex; align-items:baseline; gap:6px; }
+  .score b { color:var(--amber); font-size:17px; }
+  .score span { font-size:11px; color:#94a3b8; }
+  .eyebtn { width:32px; height:32px; border-radius:999px; border:1px solid var(--line);
+    background:rgba(148,163,184,.08); color:#cbd5e1; display:grid; place-items:center; font-size:14px; }
+
+  .frame { position:relative; flex:1; margin:0 10px 10px; border-radius:22px; overflow:hidden;
+    border:1px solid #1e293b; background:#020617; touch-action:none;
+    user-select:none; -webkit-user-select:none; cursor:crosshair; }
+
+  /* layer = kotak foto, origin kiri-atas */
+  .layer { position:absolute; left:var(--bx); top:var(--by);
+    width:var(--bw); height:var(--bh); transform-origin:0 0;
+    transform:translate3d(var(--tx),var(--ty),0) scale(var(--zs));
+    will-change:transform; }
+  .layer svg { display:block; width:100%; height:100%; }
+
+  /* marker: di luar layer, ukuran tetap */
+  #markers { position:absolute; inset:0; pointer-events:none; }
+  .marker { position:absolute; left:0; top:0; width:34px; height:34px; margin:0;
+    display:grid; place-items:center; border-radius:999px; border:2px solid #020617;
+    font-size:15px; line-height:1; cursor:pointer; padding:0;
+    box-shadow:0 8px 18px rgba(2,6,23,.7); transition:opacity .12s ease;
+    background:linear-gradient(135deg,#f59e0b,#b45309); }
+  .marker.cyan { background:linear-gradient(135deg,#06b6d4,#1d4ed8); }
+  .marker.sky  { background:linear-gradient(135deg,#0ea5e9,#0369a1); }
+  .marker .badge { position:absolute; right:-8px; top:-6px; min-width:16px; height:16px;
+    display:grid; place-items:center; border-radius:999px; border:1px solid #020617;
+    background:var(--cyan); color:#020617; font-size:9px; font-weight:900; padding:0 3px; }
+  .marker .badge.n { right:-8px; top:auto; bottom:-6px; background:var(--amber); color:#451a03; }
+  .marker.hit { box-shadow:0 0 0 3px rgba(34,211,238,.55), 0 8px 18px rgba(2,6,23,.7); }
+
+  .tol { position:absolute; width:44px; height:44px; border-radius:999px;
+    border:1.5px dashed rgba(34,211,238,.75); background:rgba(34,211,238,.08);
+    transform:translate(-50%,-50%); pointer-events:none; opacity:0; transition:opacity .1s; }
+  .tol.show { opacity:1; }
+
+  .anchor { position:absolute; width:8px; height:8px; border-radius:999px; background:#fff;
+    box-shadow:0 0 0 2px #020617; transform:translate(-50%,-50%); pointer-events:none;
+    opacity:0; }
+  .anchor.show { opacity:1; }
+
+  .panel { position:absolute; width:236px; padding:9px; border-radius:16px;
+    background:rgba(15,23,42,.97); border:1px solid rgba(251,191,36,.45);
+    box-shadow:0 22px 44px rgba(2,6,23,.75); opacity:0; pointer-events:none;
+    transition:opacity .12s ease; z-index:30; }
+  .panel.show { opacity:1; pointer-events:auto; }
+  .panel .tail { position:absolute; left:50%; width:10px; height:10px; margin-left:-5px;
+    background:rgba(15,23,42,.97); transform:rotate(45deg); }
+  .panel.above .tail { bottom:-5px; border-right:1px solid rgba(251,191,36,.45); border-bottom:1px solid rgba(251,191,36,.45); }
+  .panel.below .tail { top:-5px; border-left:1px solid rgba(251,191,36,.45); border-top:1px solid rgba(251,191,36,.45); }
+  .panel .ttl { font-size:9px; letter-spacing:.06em; text-transform:uppercase;
+    color:#64748b; margin:0 0 6px 2px; }
+  .panel .row { display:flex; flex-wrap:wrap; gap:4px; }
+  .chip { display:flex; align-items:center; gap:4px; padding:4px 7px; border-radius:999px;
+    border:1px solid rgba(251,191,36,.25); background:rgba(251,191,36,.08);
+    font-size:14px; line-height:1; cursor:pointer; }
+  .chip:hover { background:rgba(251,191,36,.18); }
+  .chip b { font-size:9px; color:#fcd34d; }
+
+  .zoomchip { position:absolute; left:8px; bottom:8px; z-index:35; display:flex; gap:4px;
+    align-items:center; padding:4px 8px; border-radius:999px; font-size:10px; font-weight:800;
+    color:#e2e8f0; background:rgba(2,6,23,.78); border:1px solid rgba(148,163,184,.35);
+    cursor:pointer; backdrop-filter:blur(4px); }
+  .zoomchip b { color:var(--cyan); font-variant-numeric:tabular-nums; }
+
+  .caption { margin:0 10px 8px; padding:7px 10px; border-radius:12px; font-size:11px;
+    color:#cbd5e1; text-align:center; background:rgba(15,23,42,.7); border:1px solid #1e293b; }
+  .nav { display:flex; gap:8px; padding:0 10px 14px; }
+  .nav button { flex:1; padding:9px 0; border-radius:12px; border:1px solid #1e293b;
+    background:rgba(15,23,42,.8); color:#cbd5e1; font-size:11px; font-weight:700; }
+
+  /* ---------------- side ---------------- */
+  .card { border:1px solid var(--line); border-radius:14px; padding:12px 14px;
+    background:rgba(15,23,42,.45); }
+  .hud { display:grid; grid-template-columns:1fr 1fr; gap:6px 14px; font-size:11px; }
+  .hud div { display:flex; justify-content:space-between; gap:8px; color:#94a3b8; }
+  .hud b { color:#e2e8f0; font-variant-numeric:tabular-nums; font-weight:700; }
+  .rowbtn { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+  .rowbtn button { padding:6px 10px; border-radius:9px; border:1px solid var(--line);
+    background:rgba(148,163,184,.1); color:#e2e8f0; font-size:11px; font-weight:700; cursor:pointer; }
+  .rowbtn button:hover { background:rgba(148,163,184,.2); }
+  label.sw { display:flex; align-items:center; gap:7px; font-size:11px; color:#94a3b8; margin-top:10px; }
+  table { width:100%; border-collapse:collapse; font-size:11px; }
+  th,td { text-align:left; padding:5px 6px; border-bottom:1px solid rgba(148,163,184,.12); }
+  th { color:#64748b; font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
+  tr.on td { background:rgba(34,211,238,.09); color:#e2e8f0; }
+  tr.on td:first-child { box-shadow:inset 2px 0 0 var(--cyan); }
+  ul.notes { margin:6px 0 0; padding-left:16px; font-size:11px; line-height:1.65; color:#94a3b8; }
+  kbd { background:#1e293b; border-radius:4px; padding:1px 5px; font-size:10px; color:#cbd5e1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <div class="phone">
+      <div class="topbar">
+        <div class="brand"><i></i>RetPAP</div>
+        <div class="score"><b>8.7</b><span>124 rate</span></div>
+        <button class="eyebtn" title="Lapisan reaksi">&#128065;</button>
+      </div>
+
+      <div class="frame" id="frame">
+        <div class="layer">
+          <svg viewBox="0 0 900 1125" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#0a2540"/>
+                <stop offset=".5" stop-color="#123a63"/>
+                <stop offset="1" stop-color="#050d1a"/>
+              </linearGradient>
+              <radialGradient id="glow" cx=".68" cy=".3" r=".55">
+                <stop offset="0" stop-color="#fbbf24" stop-opacity=".55"/>
+                <stop offset="1" stop-color="#fbbf24" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <rect width="900" height="1125" fill="url(#sky)"/>
+            <rect width="900" height="1125" fill="url(#glow)"/>
+            <circle cx="612" cy="330" r="86" fill="#fcd34d" opacity=".9"/>
+            <g fill="#0a1b2e">
+              <rect x="20" y="600" width="110" height="360"/>
+              <rect x="150" y="660" width="90" height="300"/>
+              <rect x="260" y="560" width="120" height="400"/>
+              <rect x="400" y="700" width="80" height="260"/>
+              <rect x="500" y="620" width="130" height="340"/>
+              <rect x="650" y="690" width="100" height="270"/>
+              <rect x="770" y="580" width="120" height="380"/>
+            </g>
+            <g fill="#38bdf8" opacity=".5">
+              <rect x="38" y="622" width="10" height="10"/><rect x="62" y="622" width="10" height="10"/>
+              <rect x="86" y="622" width="10" height="10"/><rect x="38" y="650" width="10" height="10"/>
+              <rect x="86" y="650" width="10" height="10"/><rect x="168" y="686" width="9" height="9"/>
+              <rect x="196" y="686" width="9" height="9"/><rect x="168" y="714" width="9" height="9"/>
+              <rect x="280" y="590" width="11" height="11"/><rect x="310" y="590" width="11" height="11"/>
+              <rect x="340" y="590" width="11" height="11"/><rect x="280" y="622" width="11" height="11"/>
+              <rect x="340" y="622" width="11" height="11"/><rect x="520" y="650" width="10" height="10"/>
+              <rect x="548" y="650" width="10" height="10"/><rect x="576" y="650" width="10" height="10"/>
+              <rect x="520" y="678" width="10" height="10"/><rect x="576" y="678" width="10" height="10"/>
+              <rect x="670" y="720" width="9" height="9"/><rect x="700" y="720" width="9" height="9"/>
+              <rect x="790" y="610" width="11" height="11"/><rect x="820" y="610" width="11" height="11"/>
+              <rect x="850" y="610" width="11" height="11"/><rect x="790" y="642" width="11" height="11"/>
+              <rect x="850" y="642" width="11" height="11"/>
+            </g>
+            <g fill="#020814">
+              <ellipse cx="450" cy="470" rx="92" ry="106"/>
+              <path d="M292 1125 C292 890 356 762 450 762 C544 762 608 890 608 1125 Z"/>
+            </g>
+            <g fill="none" stroke="#1e3a5f" stroke-width="4" opacity=".85">
+              <path d="M392 452 q22 -14 44 0"/>
+              <path d="M474 452 q22 -14 44 0"/>
+              <path d="M436 500 q14 8 28 0"/>
+            </g>
+            <g fill="#22d3ee" opacity=".75">
+              <circle cx="450" cy="600" r="5"/><circle cx="450" cy="628" r="4"/>
+              <circle cx="450" cy="654" r="3"/>
+            </g>
+            <text x="34" y="1088" font-family="ui-monospace,monospace" font-size="15"
+              fill="#64748b">RETPAP &#183; 2026 &#183; 900&#215;1125</text>
+            <text x="34" y="1110" font-family="ui-monospace,monospace" font-size="11"
+              fill="#334155">zoom 4x untuk melihat detail</text>
+          </svg>
+        </div>
+
+        <div id="markers"></div>
+        <div class="tol" id="tol"></div>
+        <div class="anchor" id="anchor"></div>
+
+        <div class="panel" id="panel">
+          <span class="tail"></span>
+          <p class="ttl" id="ptitle">Titik baru</p>
+          <div class="row" id="prow"></div>
+        </div>
+
+        <div class="zoomchip" id="zoomchip"><b id="zlabel">1.0&#215;</b><span id="zhint">reset</span></div>
+      </div>
+
+      <div class="caption">pantai sore, cahaya bagus</div>
+      <div class="nav"><button>Sebelumnya</button><button>PAP Berikutnya</button></div>
+    </div>
+  </div>
+
+  <div>
+    <h1>Zoom foto/video + posisi emoji</h1>
+    <p class="lead">Pinch (atau scroll) untuk zoom, drag untuk pan saat zoom.
+      Tap untuk membuka panel; area toleransi 22px tetap sama di semua level zoom.</p>
+
+    <h2>Status</h2>
+    <div class="card">
+      <div class="hud">
+        <div><span>scale</span><b id="h-scale">1.00&#215;</b></div>
+        <div><span>tx / ty</span><b id="h-t">0, 0</b></div>
+        <div><span>radius layar</span><b>22 px</b></div>
+        <div><span>radius normalisasi</span><b id="h-r">0.060</b></div>
+        <div><span>marker tampil</span><b id="h-m">6 / 6</b></div>
+        <div><span>hit terakhir</span><b id="h-hit">&#8212;</b></div>
+      </div>
+      <div class="rowbtn">
+        <button data-scale="1">1&#215;</button>
+        <button data-scale="2">2&#215;</button>
+        <button data-scale="4">4&#215;</button>
+        <button id="btn-reset">reset</button>
+      </div>
+      <label class="sw"><input type="checkbox" id="cb-tol" checked> tampilkan area toleransi</label>
+    </div>
+
+    <h2>Perilaku marker</h2>
+    <table>
+      <thead><tr><th>Kondisi</th><th>Posisi</th><th>Ukuran</th></tr></thead>
+      <tbody>
+        <tr id="r1"><td>1&#215;</td><td>clamp 44px dari tepi</td><td>34px</td></tr>
+        <tr id="r2"><td>&gt; 1&#215;</td><td>proyeksi jujur, tanpa clamp</td><td>34px</td></tr>
+        <tr id="r3"><td>keluar kotak foto</td><td>disembunyikan</td><td>&#8212;</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Catatan</h2>
+    <ul class="notes">
+      <li>Tap 15px dari marker &#8594; snap, panel menempel ke marker. Tap 30px &#8594; titik baru.</li>
+      <li>Double-click = zoom 2.5&#215;. Perhatikan panel sempat terbuka lalu tertutup:
+        itulah alasan double-tap ditunda ke fase 4.</li>
+      <li>Rating slider disembunyikan saat zoom supaya drag vertikal jadi pan.</li>
+      <li>Swipe kartu dikunci selama zoom &gt; 1&#215;.</li>
+      <li><kbd>0</kbd> reset, <kbd>+</kbd> / <kbd>-</kbd> zoom di tengah.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+(function () {
+  var IMG = { w: 900, h: 1125 };
+  var MIN = 1, MAX = 4, TOL = 22, MARKER = 34, EDGE = 44, PAN_ACT = 6, DBL_SCALE = 2.5;
+
+  var frame = document.getElementById('frame');
+  var layer = frame.querySelector('.layer');
+  var markersBox = document.getElementById('markers');
+  var tolEl = document.getElementById('tol');
+  var anchorEl = document.getElementById('anchor');
+  var panel = document.getElementById('panel');
+  var ptitle = document.getElementById('ptitle');
+  var prow = document.getElementById('prow');
+  var zlabel = document.getElementById('zlabel');
+  var zhint = document.getElementById('zhint');
+  var zoomchip = document.getElementById('zoomchip');
+
+  var hScale = document.getElementById('h-scale');
+  var hT = document.getElementById('h-t');
+  var hR = document.getElementById('h-r');
+  var hM = document.getElementById('h-m');
+  var hHit = document.getElementById('h-hit');
+
+  var spots = [
+    { id: 1, x: 0.26, y: 0.20, emoji: '🔥', n: 12, c: 3, cls: '' },
+    { id: 2, x: 0.68, y: 0.29, emoji: '😍', n: 8, c: 1, cls: 'cyan' },
+    { id: 3, x: 0.44, y: 0.55, emoji: '👀', n: 5, c: 0, cls: 'sky' },
+    { id: 4, x: 0.06, y: 0.78, emoji: '💦', n: 2, c: 2, cls: '' },
+    { id: 5, x: 0.93, y: 0.63, emoji: '🥵', n: 4, c: 1, cls: 'cyan' },
+    { id: 6, x: 0.52, y: 0.88, emoji: '💬', n: 0, c: 4, cls: 'sky' }
+  ];
+
+  var box = { left: 0, top: 0, w: 0, h: 0 };
+  var view = { s: 1, tx: 0, ty: 0 };
+  var panelState = null;
+  var showTol = true;
+  var markerEls = [];
+
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+  function measure() {
+    var fw = frame.clientWidth, fh = frame.clientHeight;
+    if (!fw || !fh) return;
+    var k = Math.min(fw / IMG.w, fh / IMG.h);
+    box = {
+      left: (fw - IMG.w * k) / 2,
+      top: (fh - IMG.h * k) / 2,
+      w: IMG.w * k,
+      h: IMG.h * k
+    };
+  }
+
+  function clampPan(v) {
+    var maxTx = 0, minTx = box.w - v.s * box.w;
+    var maxTy = 0, minTy = box.h - v.s * box.h;
+    return {
+      s: v.s,
+      tx: clamp(v.tx, minTx, maxTx),
+      ty: clamp(v.ty, minTy, maxTy)
+    };
+  }
+
+  function project(x, y) {
+    return {
+      x: box.left + view.tx + view.s * x * box.w,
+      y: box.top + view.ty + view.s * y * box.h
+    };
+  }
+
+  function unproject(cx, cy) {
+    return {
+      x: (cx - box.left - view.tx) / (view.s * box.w),
+      y: (cy - box.top - view.ty) / (view.s * box.h)
+    };
+  }
+
+  function zoomAt(next, fx, fy) {
+    var s = clamp(next, MIN, MAX);
+    var nx = (fx - box.left - view.tx) / (view.s * box.w);
+    var ny = (fy - box.top - view.ty) / (view.s * box.h);
+    view = clampPan({
+      s: s,
+      tx: fx - box.left - s * nx * box.w,
+      ty: fy - box.top - s * ny * box.h
+    });
+    if (s === 1) view = { s: 1, tx: 0, ty: 0 };
+    apply();
+  }
+
+  function reset() {
+    view = { s: 1, tx: 0, ty: 0 };
+    apply();
+  }
+
+  function apply() {
+    frame.style.setProperty('--bx', box.left + 'px');
+    frame.style.setProperty('--by', box.top + 'px');
+    frame.style.setProperty('--bw', box.w + 'px');
+    frame.style.setProperty('--bh', box.h + 'px');
+    frame.style.setProperty('--tx', view.tx + 'px');
+    frame.style.setProperty('--ty', view.ty + 'px');
+    frame.style.setProperty('--zs', String(view.s));
+    renderMarkers();
+    renderPanel();
+    renderHud();
+  }
+
+  function buildMarkers() {
+    markersBox.innerHTML = '';
+    markerEls = spots.map(function (sp) {
+      var b = document.createElement('button');
+      b.className = 'marker ' + sp.cls;
+      b.type = 'button';
+      b.innerHTML = '<span aria-hidden="true">' + sp.emoji + '</span>' +
+        (sp.c ? '<span class="badge">' + sp.c + '</span>' : '') +
+        (sp.n ? '<span class="badge n">' + sp.n + '</span>' : '');
+      b.addEventListener('pointerdown', function (e) {
+        e.stopPropagation();
+        openPanel(sp.x, sp.y, sp.id, 'snap');
+      });
+      markersBox.appendChild(b);
+      return b;
+    });
+  }
+
+  function renderMarkers() {
+    var visible = 0;
+    spots.forEach(function (sp, i) {
+      var el = markerEls[i];
+      var p = project(sp.x, sp.y);
+      var x = p.x;
+      if (view.s <= 1.001) x = clamp(x, box.left + EDGE, box.left + box.w - EDGE);
+      var inside = p.x > box.left - MARKER / 2 && p.x < box.left + box.w + MARKER / 2 &&
+                   p.y > box.top - MARKER / 2 && p.y < box.top + box.h + MARKER / 2;
+      if (inside) visible++;
+      el.style.transform = 'translate(' + x + 'px,' + p.y + 'px) translate(-50%,-50%)';
+      el.style.opacity = inside ? '1' : '0';
+      el.style.pointerEvents = inside ? 'auto' : 'none';
+    });
+    hM.textContent = visible + ' / ' + spots.length;
+  }
+
+  function nearest(cx, cy) {
+    var best = null;
+    spots.forEach(function (sp) {
+      var p = project(sp.x, sp.y);
+      var d = Math.hypot(p.x - cx, p.y - cy);
+      if (d <= TOL && (!best || d < best.d)) best = { sp: sp, d: d, p: p };
+    });
+    return best;
+  }
+
+  function openPanel(nx, ny, id, kind) {
+    panelState = { x: nx, y: ny, id: id, kind: kind };
+    renderPanel();
+  }
+
+  function closePanel() {
+    panelState = null;
+    renderPanel();
+  }
+
+  function renderPanel() {
+    if (!panelState) {
+      panel.style.opacity = '0';
+      panel.style.pointerEvents = 'none';
+      anchorEl.classList.remove('show');
+      return;
+    }
+
+    var p = project(panelState.x, panelState.y);
+    var fw = frame.clientWidth, fh = frame.clientHeight;
+    var half = 236 / 2;
+    var px = clamp(p.x, half + 8, fw - half - 8);
+    var above = p.y > fh * 0.36;
+    var py = clamp(p.y + (above ? -34 : 34), 8, fh - 8);
+
+    panel.classList.toggle('above', above);
+    panel.classList.toggle('below', !above);
+    panel.style.left = px + 'px';
+    panel.style.top = py + 'px';
+    panel.style.transform = above ? 'translate(-50%,-100%)' : 'translate(-50%,0)';
+    panel.style.opacity = '1';
+    panel.style.pointerEvents = 'auto';
+
+    anchorEl.style.left = p.x + 'px';
+    anchorEl.style.top = p.y + 'px';
+    anchorEl.classList.add('show');
+
+    var sp = panelState.id ? spots.filter(function (s) { return s.id === panelState.id; })[0] : null;
+    ptitle.textContent = sp ? 'Spot #' + sp.id + ' · ' + sp.n + ' reaksi' : 'Titik baru';
+    prow.innerHTML = '';
+    ['🔥', '😍', '👀', '💦', '🥵', '🥰', '+'].forEach(function (e) {
+      var c = document.createElement('button');
+      c.className = 'chip';
+      c.type = 'button';
+      c.textContent = e;
+      prow.appendChild(c);
+    });
+
+    hHit.textContent = sp ? 'Spot #' + sp.id + ' (snap)' : 'titik baru';
+  }
+
+  function renderHud() {
+    hScale.textContent = view.s.toFixed(2) + '×';
+    hT.textContent = Math.round(view.tx) + ', ' + Math.round(view.ty);
+    hR.textContent = (TOL / (box.w * view.s)).toFixed(3);
+    zlabel.textContent = view.s.toFixed(1) + '×';
+    zhint.style.display = view.s > 1.001 ? 'inline' : 'none';
+    document.getElementById('r1').className = view.s <= 1.001 ? 'on' : '';
+    document.getElementById('r2').className = view.s > 1.001 ? 'on' : '';
+    document.getElementById('r3').className = '';
+  }
+
+  /* ---------------- gestures ---------------- */
+  var pointers = new Map();
+  var start = null;
+  var pinch = null;
+  var panning = false;
+  var last = null;
+
+  function rel(e) {
+    var r = frame.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  frame.addEventListener('pointerdown', function (e) {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) {
+      start = rel(e);
+      last = start;
+      panning = false;
+      pinch = null;
+    } else if (pointers.size === 2) {
+      var pts = Array.from(pointers.values());
+      var r = frame.getBoundingClientRect();
+      var mid = {
+        x: (pts[0].x + pts[1].x) / 2 - r.left,
+        y: (pts[0].y + pts[1].y) / 2 - r.top
+      };
+      pinch = {
+        dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1,
+        mid: mid,
+        s: view.s,
+        tx: view.tx,
+        ty: view.ty,
+        nx: (mid.x - box.left - view.tx) / (view.s * box.w),
+        ny: (mid.y - box.top - view.ty) / (view.s * box.h)
+      };
+      start = null;
+      panning = false;
+    }
+  });
+
+  window.addEventListener('pointermove', function (e) {
+    if (!pointers.has(e.pointerId)) {
+      if (showTol && frame.contains(e.target)) {
+        var h = rel(e);
+        tolEl.style.left = h.x + 'px';
+        tolEl.style.top = h.y + 'px';
+        tolEl.classList.add('show');
+        var hit = nearest(h.x, h.y);
+        markerEls.forEach(function (m) { m.classList.remove('hit'); });
+        if (hit) markerEls[spots.indexOf(hit.sp)].classList.add('hit');
+      }
+      return;
+    }
+
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    var r = frame.getBoundingClientRect();
+
+    if (pointers.size >= 2 && pinch) {
+      var pts = Array.from(pointers.values());
+      var mid = {
+        x: (pts[0].x + pts[1].x) / 2 - r.left,
+        y: (pts[0].y + pts[1].y) / 2 - r.top
+      };
+      var dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      var s = clamp(pinch.s * (dist / pinch.dist), MIN, MAX);
+      view = clampPan({
+        s: s,
+        tx: mid.x - box.left - s * pinch.nx * box.w,
+        ty: mid.y - box.top - s * pinch.ny * box.h
+      });
+      if (s === 1) view = { s: 1, tx: 0, ty: 0 };
+      apply();
+      return;
+    }
+
+    if (!start) return;
+    var p = rel(e);
+    var dx = p.x - last.x, dy = p.y - last.y;
+
+    if (!panning) {
+      var moved = Math.hypot(p.x - start.x, p.y - start.y);
+      if (view.s > 1.001 && moved > PAN_ACT) panning = true;
+    }
+
+    if (panning) {
+      view = clampPan({ s: view.s, tx: view.tx + dx, ty: view.ty + dy });
+      last = p;
+      apply();
+    }
+  });
+
+  window.addEventListener('pointerup', function (e) {
+    var wasSingle = pointers.size === 1;
+    pointers.delete(e.pointerId);
+
+    if (pointers.size < 2) pinch = null;
+
+    if (wasSingle && start && !panning) {
+      var p = rel(e);
+      if (Math.hypot(p.x - start.x, p.y - start.y) <= PAN_ACT) {
+        var inv = unproject(p.x, p.y);
+        if (inv.x < 0 || inv.y < 0 || inv.x > 1 || inv.y > 1) {
+          closePanel();
+        } else {
+          var hit = nearest(p.x, p.y);
+          if (hit) openPanel(hit.sp.x, hit.sp.y, hit.sp.id, 'snap');
+          else openPanel(inv.x, inv.y, null, 'point');
+        }
+      }
+    }
+
+    if (pointers.size === 0) {
+      start = null;
+      last = null;
+      panning = false;
+    }
+  });
+
+  window.addEventListener('pointercancel', function (e) {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (pointers.size === 0) { start = null; last = null; panning = false; }
+  });
+
+  frame.addEventListener('pointerleave', function () {
+    tolEl.classList.remove('show');
+    markerEls.forEach(function (m) { m.classList.remove('hit'); });
+  });
+
+  frame.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var p = rel(e);
+    var factor = Math.exp(-e.deltaY * 0.0016);
+    zoomAt(view.s * factor, p.x, p.y);
+  }, { passive: false });
+
+  frame.addEventListener('dblclick', function (e) {
+    e.preventDefault();
+    var p = rel(e);
+    closePanel();
+    if (view.s > 1.001) reset();
+    else zoomAt(DBL_SCALE, p.x, p.y);
+  });
+
+  zoomchip.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+  zoomchip.addEventListener('click', function (e) {
+    e.stopPropagation();
+    reset();
+  });
+
+  panel.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+
+  document.getElementById('cb-tol').addEventListener('change', function (e) {
+    showTol = e.target.checked;
+    if (!showTol) tolEl.classList.remove('show');
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', reset);
+
+  document.querySelectorAll('[data-scale]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var s = Number(b.getAttribute('data-scale'));
+      if (s === 1) { reset(); return; }
+      var fw = frame.clientWidth, fh = frame.clientHeight;
+      view = { s: 1, tx: 0, ty: 0 };
+      zoomAt(s, fw / 2, fh / 2);
+    });
+  });
+
+  window.addEventListener('keydown', function (e) {
+    if (e.key === '0') { reset(); return; }
+    var fw = frame.clientWidth, fh = frame.clientHeight;
+    if (e.key === '+' || e.key === '=') { zoomAt(view.s * 1.4, fw / 2, fh / 2); }
+    if (e.key === '-') { zoomAt(view.s / 1.4, fw / 2, fh / 2); }
+  });
+
+  window.addEventListener('resize', function () {
+    var prev = view;
+    measure();
+    view = clampPan(prev);
+    apply();
+  });
+
+  // Deep link untuk demo/screenshot: #z=2.5&x=0.44&y=0.55
+  function applyHash() {
+    var m = location.hash.match(/z=([0-9.]+)/);
+    if (!m) return;
+    var z = Number(m[1]);
+    if (z > 1) {
+      var fx = box.left + 0.44 * box.w;
+      var fy = box.top + 0.55 * box.h;
+      view = { s: 1, tx: 0, ty: 0 };
+      zoomAt(z, fx, fy);
+    }
+    var mx = location.hash.match(/x=([0-9.]+)/);
+    var my = location.hash.match(/y=([0-9.]+)/);
+    if (mx && my) openPanel(Number(mx[1]), Number(my[1]), 3, 'snap');
+  }
+
+  measure();
+  buildMarkers();
+  apply();
+  applyHash();
+})();
+</script>
+</body>
+</html>
