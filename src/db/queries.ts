@@ -377,6 +377,9 @@ export type ReactInput = {
   y?: number;
   emoji: string;
 };
+/** Points one user may mark on a single photo before the oldest is dropped. */
+const MAX_REACTIONS_PER_PHOTO = 3;
+
 export type ReactOutcome =
   | { ok: true; spotId: number; removed: boolean }
   | {
@@ -400,15 +403,18 @@ export async function reactToPhoto(
       .for("update");
     if (!photo) return { ok: false, reason: "invalid_target" } as const;
 
-    const [mine] = await tx
+    // Oldest first: the same order decides which reaction leaves at the cap.
+    const mine = await tx
       .select()
       .from(reactions)
-      .where(and(eq(reactions.photoId, photoId), eq(reactions.userId, userId)));
+      .where(and(eq(reactions.photoId, photoId), eq(reactions.userId, userId)))
+      .orderBy(reactions.id);
 
     // Validate before resolveSpot so a bad emoji never creates an empty spot.
-    // Re-sending the stored emoji stays allowed: rows written before the
+    // Re-sending a stored emoji stays allowed: rows written before the
     // catalog existed must remain removable.
-    if (!isReactionEmoji(input.emoji) && mine?.emoji !== input.emoji) {
+    const keepsStoredEmoji = mine.some((row) => row.emoji === input.emoji);
+    if (!isReactionEmoji(input.emoji) && !keepsStoredEmoji) {
       return { ok: false, reason: "unknown_emoji" } as const;
     }
 
@@ -416,25 +422,35 @@ export async function reactToPhoto(
     if (!resolved.ok) return resolved;
     const spotId = resolved.spotId;
 
-    if (mine && mine.spotId === spotId && mine.emoji === input.emoji) {
-      await tx.delete(reactions).where(eq(reactions.id, mine.id));
+    const mineAtSpot = mine.find((row) => row.spotId === spotId);
+
+    // Same emoji at the same spot is a toggle-off.
+    if (mineAtSpot && mineAtSpot.emoji === input.emoji) {
+      await tx.delete(reactions).where(eq(reactions.id, mineAtSpot.id));
       await deleteSpotIfEmpty(tx, spotId);
       return { ok: true, spotId, removed: true } as const;
     }
 
-    if (mine) {
-      const previousSpotId = mine.spotId;
+    // A different emoji at the same spot replaces it: the count does not grow.
+    if (mineAtSpot) {
       await tx
         .update(reactions)
-        .set({ spotId, emoji: input.emoji })
-        .where(eq(reactions.id, mine.id));
-      if (previousSpotId !== spotId)
-        await deleteSpotIfEmpty(tx, previousSpotId);
-    } else {
-      await tx
-        .insert(reactions)
-        .values({ photoId, spotId, userId, emoji: input.emoji });
+        .set({ emoji: input.emoji })
+        .where(eq(reactions.id, mineAtSpot.id));
+      return { ok: true, spotId, removed: false } as const;
     }
+
+    // A new spot past the cap drops the oldest reaction, so the newest always
+    // wins without asking. The photo row lock above keeps this race-free.
+    if (mine.length >= MAX_REACTIONS_PER_PHOTO) {
+      const oldest = mine[0];
+      await tx.delete(reactions).where(eq(reactions.id, oldest.id));
+      await deleteSpotIfEmpty(tx, oldest.spotId);
+    }
+
+    await tx
+      .insert(reactions)
+      .values({ photoId, spotId, userId, emoji: input.emoji });
 
     return { ok: true, spotId, removed: false } as const;
   });

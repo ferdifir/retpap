@@ -127,6 +127,13 @@
       "when": 1793361437345,
       "tag": "0017_rare_outlaw_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793460901657,
+      "tag": "0018_aromatic_kylun",
+      "breakpoints": true
     }
   ]
 }

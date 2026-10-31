@@ -199,8 +199,9 @@ export const reactions = pgTable(
       .defaultNow(),
   },
   (table) => [
-    // One reaction per user per photo, enforced by the database.
-    unique("reactions_photo_user").on(table.photoId, table.userId),
+    // One reaction per user per spot: a photo may hold up to three of their
+    // reactions, capped in reactToPhoto().
+    unique("reactions_spot_user").on(table.spotId, table.userId),
     index("reactions_spot_idx").on(table.spotId, table.emoji),
     foreignKey({
       name: "reactions_spot_photo_fk",
