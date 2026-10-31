@@ -32,7 +32,7 @@ Boleh tapi tak masuk leaderboard
 ```
 
 Setting: poll biasa, satu pilihan, anonim (wajib di channel), tombol
-`Buka RetPAP` → `?start=app`.
+`Buka RetPAP` → `?startapp=`.
 
 Catatan API: `open_period` maksimal 600 detik, jadi poll dibiarkan terbuka
 dan ditutup manual dengan `stopPoll` (mis. 24 jam kemudian). Hasil agregat

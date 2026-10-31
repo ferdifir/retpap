@@ -86,7 +86,9 @@ Output sukses: `terkirim message_id=<n> ke RetPAP`. Laporkan `message_id` ke use
 ## Tombol (opsional)
 
 - Upload: `https://t.me/<botUsername>?start=upload`
-- Buka aplikasi: `https://t.me/<botUsername>?start=app`
+- Buka aplikasi: `https://t.me/<botUsername>?startapp=` — Mini App langsung terbuka.
+  Jangan pakai `?start=app`: itu cuma membuka chat bot, user masih harus menekan
+  Start lalu tombol berikutnya.
 - Satu baris satu tombol: `inline_keyboard: [[{ text, url }]]`
 - Tanpa tombol: hapus `reply_markup` dari payload.
 
