@@ -42,6 +42,8 @@ export type FeedPhoto = {
   gender: "female" | "male" | null;
   rating: { avg: number; votes: number; mine: number | null };
   spots: FeedSpot[];
+  /** The signed-in user has a private canvas on this photo. */
+  hasDrawing: boolean;
 };
 
 /** One ranked row on the all-time leaderboard. */

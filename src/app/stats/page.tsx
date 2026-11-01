@@ -5,9 +5,11 @@ import { notFound } from "next/navigation";
 import { getSessionUserId } from "@/lib/auth-server";
 import {
   getDailySeries,
+  getDrawingFunnel,
   getGateFunnel,
   getOverview,
   getRetention,
+  getTopDrawings,
   getTopPhotos,
   getUploadFunnel,
   isOwner,
@@ -120,14 +122,17 @@ async function StatsContent() {
   const userId = await getSessionUserId();
   if (userId === null || !(await isOwner(userId))) notFound();
 
-  const [overview, daily, upload, gate, top, retention] = await Promise.all([
-    getOverview(),
-    getDailySeries(),
-    getUploadFunnel(),
-    getGateFunnel(),
-    getTopPhotos(),
-    getRetention(),
-  ]);
+  const [overview, daily, upload, gate, top, drawing, topDrawings, retention] =
+    await Promise.all([
+      getOverview(),
+      getDailySeries(),
+      getUploadFunnel(),
+      getGateFunnel(),
+      getTopPhotos(),
+      getDrawingFunnel(),
+      getTopDrawings(),
+      getRetention(),
+    ]);
 
   const maxOpens = Math.max(1, ...daily.map((point) => point.opens));
   const maxViews = Math.max(1, ...daily.map((point) => point.views));
@@ -300,6 +305,52 @@ async function StatsContent() {
           </table>
         </div>
       </Section>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Section title="Gambar di foto (7 hari)">
+          <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+            {[
+              ["Buka mode gambar", drawing.opened],
+              ["Simpan", drawing.saved],
+              ["Hapus semua coretan", drawing.cleared],
+              ["Batal", drawing.cancelled],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="space-y-1">
+                <div className="flex items-baseline justify-between text-[11px]">
+                  <span className="text-slate-300">{label}</span>
+                  <span className="font-bold text-slate-100">{num(Number(value))}</span>
+                </div>
+                <Bar value={Number(value)} max={Math.max(1, drawing.opened)} />
+              </div>
+            ))}
+            <p className="pt-1 text-[10px] text-slate-500">
+              Simpan/buka {pct(drawing.saved, drawing.opened)} · {num(drawing.users)} user ·{" "}
+              {num(drawing.photos)} foto. Hanya jumlah; coretan tidak pernah dikirim.
+            </p>
+          </div>
+        </Section>
+
+        <Section title="Paling sering digambar">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+            {topDrawings.length === 0 ? (
+              <p className="text-xs text-slate-500">Belum ada coretan tersimpan.</p>
+            ) : (
+              <ul className="space-y-2 text-[11px]">
+                {topDrawings.map((photo) => (
+                  <li key={photo.id} className="flex items-baseline justify-between gap-2">
+                    <span className="line-clamp-1 text-slate-300">
+                      {photo.caption || "tanpa caption"}
+                    </span>
+                    <span className="shrink-0 font-bold text-slate-100">
+                      {num(photo.users)} user · {num(photo.strokes)} coretan
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Section>
+      </div>
 
       <Section title="Retensi (30 hari kohort)">
         <RetentionTable rows={retention} />

@@ -299,3 +299,86 @@ export async function getRetention(): Promise<RetentionRow[]> {
     d7: count(row.d7),
   }));
 }
+
+export type DrawingFunnel = {
+  opened: number;
+  saved: number;
+  cleared: number;
+  cancelled: number;
+  users: number;
+  photos: number;
+};
+
+export type TopDrawing = {
+  id: number;
+  slug: string;
+  caption: string;
+  users: number;
+  strokes: number;
+};
+
+/** Counts only: the strokes themselves are private and never leave the app. */
+export async function getDrawingFunnel(): Promise<DrawingFunnel> {
+  const [row] = await rows<{
+    opened: unknown;
+    saved: unknown;
+    cleared: unknown;
+    cancelled: unknown;
+    users: unknown;
+    photos: unknown;
+  }>(sql`
+    select
+      count(*) filter (where name = 'draw_open') as opened,
+      count(*) filter (where name = 'draw_save') as saved,
+      count(*) filter (where name = 'draw_clear') as cleared,
+      count(*) filter (where name = 'draw_cancel') as cancelled,
+      count(distinct user_id) filter (
+        where name in ('draw_open', 'draw_save', 'draw_clear', 'draw_cancel')
+      ) as users,
+      count(distinct photo_id) filter (
+        where name in ('draw_open', 'draw_save', 'draw_clear', 'draw_cancel')
+      ) as photos
+    from events
+    where created_at >= now() - interval '7 days'
+  `);
+
+  return {
+    opened: count(row?.opened),
+    saved: count(row?.saved),
+    cleared: count(row?.cleared),
+    cancelled: count(row?.cancelled),
+    users: count(row?.users),
+    photos: count(row?.photos),
+  };
+}
+
+/** Which photos people keep painting, from the drawings table itself. */
+export async function getTopDrawings(): Promise<TopDrawing[]> {
+  const list = await rows<{
+    id: unknown;
+    slug: string;
+    caption: string;
+    users: unknown;
+    strokes: unknown;
+  }>(sql`
+    select p.id,
+           p.slug,
+           p.caption,
+           count(d.id) as users,
+           sum(jsonb_array_length(d.strokes)) as strokes
+    from drawings d
+    join photos p on p.id = d.photo_id
+    where p.is_active = true
+    group by p.id
+    order by users desc, strokes desc, p.id desc
+    limit 5
+  `);
+
+  return list.map((row) => ({
+    id: count(row.id),
+    slug: row.slug,
+    caption: row.caption,
+    users: count(row.users),
+    strokes: count(row.strokes),
+  }));
+}

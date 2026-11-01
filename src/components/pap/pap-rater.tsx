@@ -77,6 +77,8 @@ export function PapRater() {
   // null means the user has not picked a feed filter yet; the picker is shown
   // once and the choice is stored on the user row, not in the browser.
   const [preference, setPreference] = useState<GenderPreference | null>(null);
+  // Staged rollout flag from the session; false until the server says yes.
+  const [paintEnabled, setPaintEnabled] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [savingPreference, setSavingPreference] = useState(false);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
@@ -129,6 +131,7 @@ export function PapRater() {
           channelUrl: string;
           preference: GenderPreference | null;
           owner: boolean;
+          paint: boolean;
         };
 
         // Bot first, then the channel; the start gate can be hidden by config.
@@ -152,6 +155,7 @@ export function PapRater() {
           setGate(nextGate);
           setChannelUrl(sessionBody.channelUrl);
           setPreference(sessionBody.preference ?? null);
+          setPaintEnabled(sessionBody.paint === true);
         }
 
         if (nextGate) {
@@ -883,6 +887,7 @@ export function PapRater() {
               onRatingBlur={commitRating}
               onPrevious={() => flipTo(currentIndex - 1)}
               onNext={() => flipTo(currentIndex + 1)}
+              paintEnabled={paintEnabled}
             />
           ))}
         </div>

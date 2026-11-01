@@ -4,6 +4,7 @@ import { upsertUser } from "@/db/queries";
 import { probePrivateChat } from "@/lib/bot/api";
 import { CHANNEL_URL, isChannelMember, ownerTelegramId } from "@/lib/bot/channel";
 import { verifyInitData } from "@/lib/init-data";
+import { paintAccessEnabled } from "@/lib/paint-access";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken } from "@/lib/session";
 
 const bodySchema = z.object({
@@ -89,6 +90,8 @@ export async function POST(request: Request) {
     // Only tells the caller about themselves; every owner route still checks
     // the session server-side.
     owner: ownerTelegramId() === user.telegramId,
+    // Staged rollout: only listed ids get the drawing tool.
+    paint: paintAccessEnabled(user.telegramId),
     user: {
       id: user.id,
       firstName: user.firstName,

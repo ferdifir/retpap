@@ -4,6 +4,7 @@ import {
   LEADERBOARD_PERIODS,
   leaderboardWindow,
 } from "@/lib/leaderboard-period";
+import type { DrawStroke } from "@/lib/draw";
 import { isReactionEmoji } from "@/lib/reactions/catalog";
 import {
   findSpotAt,
@@ -13,6 +14,7 @@ import {
 import { getDb, type Db } from "./client";
 import {
   comments,
+  drawings,
   leaderboardAnnouncements,
   notifications,
   photos,
@@ -107,6 +109,7 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
   if (photoRows.length === 0) return [];
 
   const photoIds = photoRows.map((photo) => photo.id);
+  const drawnIds = new Set(await getDrawnPhotoIds(userId, photoIds));
 
   const spotRows = await db
     .select()
@@ -183,6 +186,7 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
         mine: photoRatings.find((row) => row.userId === userId)?.score ?? null,
       },
       spots,
+      hasDrawing: drawnIds.has(photo.id),
     };
   });
 }
@@ -1223,4 +1227,64 @@ export async function getPhotoUploader(photoId: number): Promise<number | null> 
     .where(eq(photos.id, photoId));
 
   return row?.userId ?? null;
+}
+/** The signed-in user's own canvas for one photo; empty when never drawn on. */
+export async function getDrawingStrokes(
+  photoId: number,
+  userId: number,
+): Promise<DrawStroke[]> {
+  const { db } = getDb();
+
+  const [row] = await db
+    .select({ strokes: drawings.strokes })
+    .from(drawings)
+    .where(and(eq(drawings.photoId, photoId), eq(drawings.userId, userId)));
+
+  return row?.strokes ?? [];
+}
+
+/** Photos the user has already drawn on, so the feed only fetches what exists. */
+export async function getDrawnPhotoIds(
+  userId: number,
+  photoIds: number[],
+): Promise<number[]> {
+  if (photoIds.length === 0) return [];
+  const { db } = getDb();
+
+  const rows = await db
+    .select({ photoId: drawings.photoId })
+    .from(drawings)
+    .where(and(eq(drawings.userId, userId), inArray(drawings.photoId, photoIds)));
+
+  return rows.map((row) => row.photoId);
+}
+
+/**
+ * Replaces the canvas. Strokes are already sanitised by the caller; the
+ * conflict target keeps it to one row per photo per user.
+ */
+export async function saveDrawingStrokes(
+  photoId: number,
+  userId: number,
+  strokes: DrawStroke[],
+): Promise<DrawStroke[]> {
+  const { db } = getDb();
+
+  if (strokes.length === 0) {
+    await db
+      .delete(drawings)
+      .where(and(eq(drawings.photoId, photoId), eq(drawings.userId, userId)));
+    return [];
+  }
+
+  const [row] = await db
+    .insert(drawings)
+    .values({ photoId, userId, strokes })
+    .onConflictDoUpdate({
+      target: [drawings.photoId, drawings.userId],
+      set: { strokes, updatedAt: new Date() },
+    })
+    .returning({ strokes: drawings.strokes });
+
+  return row?.strokes ?? [];
 }

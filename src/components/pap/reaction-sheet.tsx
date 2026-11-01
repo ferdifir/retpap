@@ -15,6 +15,9 @@ type ReactionSheetProps = {
   error: string | null;
   onPick: (emoji: string) => void;
   onClose: () => void;
+  /** Staged rollout: the paint tab only exists for listed users. */
+  paintEnabled: boolean;
+  onPaint: () => void;
 };
 
 function EmojiCell({
@@ -55,7 +58,14 @@ function EmojiCell({
  * choreography. It is portaled to the body because the card sits inside a 3D
  * transformed ancestor, where position:fixed would be trapped.
  */
-export function ReactionSheet({ spot, error, onPick, onClose }: ReactionSheetProps) {
+export function ReactionSheet({
+  spot,
+  error,
+  onPick,
+  onClose,
+  paintEnabled,
+  onPaint,
+}: ReactionSheetProps) {
   const recent = useRecentEmojis();
   const [query, setQuery] = useState("");
 
@@ -153,6 +163,33 @@ export function ReactionSheet({ spot, error, onPick, onClose }: ReactionSheetPro
             </span>
           </button>
         </div>
+
+        {paintEnabled ? (
+          <div
+            role="tablist"
+            aria-label="Alat"
+            className="mx-3 mt-2 grid shrink-0 grid-cols-2 gap-1 rounded-xl bg-slate-950/70 p-1"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected="true"
+              onClick={() => undefined}
+              className="rounded-lg bg-slate-800 px-2 py-1.5 text-[11px] font-extrabold text-slate-100"
+            >
+              Emoji
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected="false"
+              onClick={onPaint}
+              className="rounded-lg px-2 py-1.5 text-[11px] font-bold text-slate-400 transition-colors hover:text-slate-200"
+            >
+              Gambar
+            </button>
+          </div>
+        ) : null}
 
         <div className="shrink-0 px-3 pt-2">
           <input

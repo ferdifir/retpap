@@ -16,6 +16,10 @@ export const EVENT_NAMES = [
   "upload_queued",
   "upload_abandoned",
   "reward_claim",
+  "draw_open",
+  "draw_save",
+  "draw_clear",
+  "draw_cancel",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

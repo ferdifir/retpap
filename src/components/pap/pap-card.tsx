@@ -9,6 +9,7 @@ import { usePinchZoom } from "@/hooks/use-pinch-zoom";
 import { track } from "@/lib/analytics/track";
 import { isTouchEcho, notePointerInput } from "@/lib/pointer-input";
 import { setNsfwReveal, useNsfwReveal } from "@/lib/nsfw";
+import type { DrawStroke } from "@/lib/draw";
 import { findSpotAt } from "@/lib/reaction-rules";
 import { QUICK_REACTION_EMOJIS } from "@/lib/reactions/catalog";
 import { pushRecentEmoji, useRecentEmojis } from "@/lib/reactions/recent";
@@ -16,6 +17,13 @@ import { haptic } from "@/lib/telegram";
 import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
 import type { CardPosition, DragAxis, InputSource, ReactionResult, SpotTarget } from "@/lib/types";
 import { CaptionText } from "./caption-text";
+import {
+  DEFAULT_DRAW_TOOL,
+  DrawCanvas,
+  DrawingOverlay,
+  DrawToolbar,
+  type DrawTool,
+} from "./draw-canvas";
 import { RatingSlider } from "./rating-slider";
 import { ReactionBar } from "./reaction-bar";
 import { ReactionSheet } from "./reaction-sheet";
@@ -59,6 +67,8 @@ type PapCardProps = {
   onNext: () => void;
   /** Lets the deck lock swiping while a pinch is in progress. */
   onZoomChange?: (zoomed: boolean) => void;
+  /** Staged rollout: the private drawing canvas is only offered to some users. */
+  paintEnabled: boolean;
 };
 
 const TRANSFORMS: Record<CardPosition, string> = {
@@ -94,6 +104,7 @@ export function PapCard({
   onPrevious,
   onNext,
   onZoomChange,
+  paintEnabled,
 }: PapCardProps) {
   const isActive = position === "active";
   const [ripple, setRipple] = useState<RippleState | null>(null);
@@ -102,6 +113,12 @@ export function PapCard({
   const [busy, setBusy] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [reactError, setReactError] = useState<string | null>(null);
+  // null until the user's own canvas has been fetched.
+  const [strokes, setStrokes] = useState<DrawStroke[] | null>(null);
+  const [painting, setPainting] = useState(false);
+  const [tool, setTool] = useState<DrawTool>(DEFAULT_DRAW_TOOL);
+  /** Canvas as it was when the user entered drawing mode, restored by Batal. */
+  const entryStrokes = useRef<DrawStroke[]>([]);
   const recent = useRecentEmojis();
   const nsfwGlobal = useNsfwReveal();
   const [nsfwHere, setNsfwHere] = useState(false);
@@ -136,11 +153,39 @@ export function PapCard({
     maxScale: item.mediaType === "video" ? 3 : 4,
     // A rating drag already owns the pointer; pinching mid-drag would commit a
     // stray score when the first finger lifts.
-    enabled: isActive && !nsfwHidden && !ratingDragging,
+    enabled: isActive && !nsfwHidden && !ratingDragging && !painting,
     onZoomChange,
   });
 
   const reactionsVisible = showReactions && !nsfwHidden && !pinch.zoomed;
+
+  // The canvas is private, so it is fetched once per card and only for the
+  // signed-in user. `hasDrawing` comes from the feed, which keeps the request
+  // off every photo the user never drew on.
+  useEffect(() => {
+    if (!isActive || strokes !== null) return;
+
+    let cancelled = false;
+    void (async () => {
+      if (!item.hasDrawing) {
+        setStrokes([]);
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/photos/" + item.id + "/drawing");
+        if (!response.ok) throw new Error("drawing");
+        const body = (await response.json()) as { strokes: DrawStroke[] };
+        if (!cancelled) setStrokes(body.strokes);
+      } catch {
+        if (!cancelled) setStrokes([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isActive, item.hasDrawing, item.id, strokes]);
 
   const handleIntrinsicSize = useCallback((width: number, height: number) => {
     setMediaSize((current) =>
@@ -531,6 +576,100 @@ export function PapCard({
     openPoint(at.x, at.y, "emoji");
   };
 
+  const strokesRef = useRef<DrawStroke[]>([]);
+  const saveTimer = useRef<number | null>(null);
+
+  /** Only counts leave the device; the coordinates never enter analytics. */
+  const strokeStats = (list: DrawStroke[]) => {
+    let points = 0;
+    for (const stroke of list) points += stroke.points.length;
+    return { strokes: list.length, points };
+  };
+
+  const putStrokes = useCallback(
+    (next: DrawStroke[]) => {
+      void fetch("/api/photos/" + item.id + "/drawing", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ strokes: next }),
+      }).catch(() => undefined);
+    },
+    [item.id],
+  );
+
+  /** Debounced save: a stroke is one of many, so only the last one hits the API. */
+  const commitStrokes = useCallback(
+    (next: DrawStroke[]) => {
+      strokesRef.current = next;
+      setStrokes(next);
+
+      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+      saveTimer.current = window.setTimeout(() => {
+        saveTimer.current = null;
+        putStrokes(next);
+      }, 600);
+    },
+    [putStrokes],
+  );
+
+  /** Leaving the canvas must not drop the stroke that was still pending. */
+  const flushStrokes = useCallback(() => {
+    if (saveTimer.current === null) return;
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    putStrokes(strokesRef.current);
+  }, [putStrokes]);
+
+  const startPainting = () => {
+    if (!paintEnabled) return;
+    setSheetOpen(false);
+    setInteraction(null);
+    // Drawing needs an unobstructed view, so the 18+ blur is lifted here and
+    // stays lifted for this card.
+    setNsfwHere(true);
+    entryStrokes.current = strokes ?? [];
+    track("draw_open", {
+      photoId: item.id,
+      meta: { existing: (strokes ?? []).length > 0 },
+    });
+    setPainting(true);
+  };
+
+  const stopPainting = () => {
+    // A pending timer means this session actually changed something.
+    const changed = saveTimer.current !== null;
+    flushStrokes();
+
+    const final = strokesRef.current;
+    if (changed && final.length > 0) {
+      track("draw_save", { photoId: item.id, meta: strokeStats(final) });
+    }
+
+    setPainting(false);
+  };
+
+  /** Batal throws away this session: the server is put back to the entry state. */
+  const cancelPainting = () => {
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+
+    const discarded = strokeStats(strokesRef.current);
+    if (discarded.strokes > 0) {
+      track("draw_cancel", {
+        photoId: item.id,
+        meta: { strokes: discarded.strokes },
+      });
+    }
+
+    const previous = entryStrokes.current;
+    strokesRef.current = previous;
+    setStrokes(previous);
+    putStrokes(previous);
+    setPainting(false);
+  };
+
   // Frame width without touching the ref during render: the image box is
   // centred, so frame = left + width + left.
   const frameWidth = box.width > 0 ? box.left * 2 + box.width : 360;
@@ -634,6 +773,10 @@ export function PapCard({
             />
           )}
 
+          {!nsfwHidden && !painting && strokes && strokes.length > 0 ? (
+            <DrawingOverlay box={box} strokes={strokes} />
+          ) : null}
+
           {item.isNsfw ? (
             <button
               type="button"
@@ -709,7 +852,7 @@ export function PapCard({
             </div>
           ) : null}
 
-          {!nsfwHidden ? (
+          {!nsfwHidden && !painting ? (
             <div
               role="button"
               tabIndex={isActive ? 0 : -1}
@@ -738,7 +881,7 @@ export function PapCard({
           ) : null}
 
           {/* Markers live on the image box, not on the letterboxed container. */}
-          {reactionsVisible ? (
+          {reactionsVisible && !painting ? (
             <div
               className="pointer-events-none absolute z-20"
               style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
@@ -764,7 +907,7 @@ export function PapCard({
 
           {/* Hidden together with the reaction layer: the slider is the drag
               handle, so keeping it invisible would still swallow taps there. */}
-          {reactionsVisible ? (
+          {reactionsVisible && !painting ? (
             <RatingSlider
               value={rating}
               dragging={ratingDragging}
@@ -816,6 +959,8 @@ export function PapCard({
             <ReactionSheet
               spot={spot}
               error={reactError}
+              paintEnabled={paintEnabled}
+              onPaint={startPainting}
               onPick={(emoji) => {
                 setSheetOpen(false);
                 void handleEmoji(emoji);
@@ -823,9 +968,36 @@ export function PapCard({
               onClose={() => setSheetOpen(false)}
             />
           ) : null}
+
+          {!nsfwHidden && isActive && painting ? (
+            <DrawCanvas
+              box={box}
+              strokes={strokes ?? []}
+              tool={tool}
+              onCommit={commitStrokes}
+            />
+          ) : null}
         </div>
 
         <div className="relative z-10 shrink-0 space-y-2">
+          {painting ? (
+            <DrawToolbar
+              tool={tool}
+              canUndo={(strokes?.length ?? 0) > 0}
+              onTool={setTool}
+              onUndo={() => commitStrokes((strokes ?? []).slice(0, -1))}
+              onClear={() => {
+                const removed = strokeStats(strokes ?? []).strokes;
+                if (removed > 0) {
+                  track("draw_clear", { photoId: item.id, meta: { removed } });
+                }
+                commitStrokes([]);
+              }}
+              onDone={stopPainting}
+              onCancel={cancelPainting}
+            />
+          ) : (
+            <>
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-2 py-1.5">
             <p className="line-clamp-2 text-center text-xs font-medium text-slate-200">
               <CaptionText text={item.caption} />
@@ -852,6 +1024,8 @@ export function PapCard({
               <ChevronDownIcon className="size-2.5" />
             </button>
           </div>
+            </>
+          )}
         </div>
       </div>
     </article>

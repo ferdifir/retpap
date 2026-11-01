@@ -207,3 +207,49 @@ export function UploadIcon(props: IconProps) {
     </svg>
   );
 }
+export function BrushIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
+      <path d="M15.5 3.5l5 5-8.8 8.8a3 3 0 0 1-1.5.8l-4.4.9.9-4.4a3 3 0 0 1 .8-1.5l8-8.6z" />
+      <path d="M4.5 20.5c1.4-.4 2-1.3 2-2.6" />
+    </svg>
+  );
+}
+
+export function EraserIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
+      <path d="M8.5 20.5H20" />
+      <path d="M15.8 4.2l4 4a1.6 1.6 0 0 1 0 2.3l-7.5 7.5a2.4 2.4 0 0 1-1.7.7H8l-3.5-3.5a2.4 2.4 0 0 1 0-3.4l8-8a1.6 1.6 0 0 1 2.3 0z" />
+      <path d="M9 9.5l6 6" />
+    </svg>
+  );
+}
+
+export function UndoIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
+      <path d="M4 9h10a5 5 0 0 1 0 10h-4" />
+      <path d="M7.5 5.5L4 9l3.5 3.5" />
+    </svg>
+  );
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
+      <path d="M4 7h16" />
+      <path d="M9.5 7V5h5v2" />
+      <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" />
+      <path d="M10.5 11v6M13.5 11v6" />
+    </svg>
+  );
+}
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...strokeProps} {...props}>
+      <path d="M5 12.5l4.5 4.5L19 7" />
+    </svg>
+  );
+}

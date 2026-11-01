@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { DrawStroke } from "@/lib/draw";
 import {
   bigint,
   boolean,
@@ -269,6 +270,40 @@ export const ratings = pgTable(
     // Period leaderboards filter by when a rating was first written.
     index("ratings_created_at_idx").on(table.createdAt, table.photoId),
     check("ratings_score_range", sql`${table.score} between 1 and 10`),
+  ],
+);
+
+/**
+ * One private canvas per user per photo. Strokes are normalised coordinates,
+ * never a rendered bitmap: the drawing stays sharp at any zoom and costs a few
+ * kilobytes instead of an image.
+ *
+ * Rows are only ever read back for their owner. Nothing in the feed, the
+ * channel or the leaderboard exposes them.
+ */
+export const drawings = pgTable(
+  "drawings",
+  {
+    id: identity(),
+    photoId: bigint("photo_id", { mode: "number" })
+      .notNull()
+      .references(() => photos.id, { onDelete: "cascade" }),
+    userId: bigint("user_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    strokes: jsonb("strokes").$type<DrawStroke[]>().notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // One canvas per photo per user: the row is edited, not appended to.
+    unique("drawings_photo_user").on(table.photoId, table.userId),
+    index("drawings_user_idx").on(table.userId),
+    check("drawings_strokes_array", sql`jsonb_typeof(${table.strokes}) = 'array'`),
   ],
 );
 
