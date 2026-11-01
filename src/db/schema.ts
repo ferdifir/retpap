@@ -292,6 +292,11 @@ export const drawings = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     strokes: jsonb("strokes").$type<DrawStroke[]>().notNull().default(sql`'[]'::jsonb`),
+    /** "private" | "feed"; feed means the drawing rides along in the carousel. */
+    visibility: text("visibility").notNull().default("private"),
+    /** Author label in the feed carousel; false shows the name, like comments. */
+    isAnonymous: boolean("is_anonymous").notNull().default(true),
+    sharedAt: timestamp("shared_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -303,7 +308,10 @@ export const drawings = pgTable(
     // One canvas per photo per user: the row is edited, not appended to.
     unique("drawings_photo_user").on(table.photoId, table.userId),
     index("drawings_user_idx").on(table.userId),
+    // The carousel reads every shared drawing of one photo.
+    index("drawings_shared_idx").on(table.photoId, table.visibility),
     check("drawings_strokes_array", sql`jsonb_typeof(${table.strokes}) = 'array'`),
+    check("drawings_visibility_valid", sql`${table.visibility} in ('private', 'feed')`),
   ],
 );
 

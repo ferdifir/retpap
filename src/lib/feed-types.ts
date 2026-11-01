@@ -1,3 +1,5 @@
+import type { DrawStroke } from "./draw";
+
 export type FeedSpot = {
   id: number;
   /** 0..1 relative to the rendered image box. */
@@ -17,6 +19,18 @@ export type FeedComment = {
   createdAt: string;
   /** Written by the signed-in user: the one comment they own on this photo. */
   mine: boolean;
+  author: { firstName: string; username: string | null };
+};
+
+/** One extra carousel slide: somebody's drawing on this photo. */
+export type FeedDrawingSlide = {
+  id: number;
+  strokes: DrawStroke[];
+  /** Written by the viewer: the card labels it as their own canvas. */
+  mine: boolean;
+  /** Published to the feed; false means only its author can see the slide. */
+  shared: boolean;
+  isAnonymous: boolean;
   author: { firstName: string; username: string | null };
 };
 
@@ -44,6 +58,8 @@ export type FeedPhoto = {
   spots: FeedSpot[];
   /** The signed-in user has a private canvas on this photo. */
   hasDrawing: boolean;
+  /** Extra carousel slides: shared drawings plus the user's own. */
+  drawingSlides: number;
 };
 
 /** One ranked row on the all-time leaderboard. */

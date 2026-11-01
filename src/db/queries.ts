@@ -29,6 +29,7 @@ import {
 
 import type {
   FeedComment,
+  FeedDrawingSlide,
   FeedPhoto,
   FeedSpot,
   LeaderboardEntry,
@@ -110,6 +111,7 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
 
   const photoIds = photoRows.map((photo) => photo.id);
   const drawnIds = new Set(await getDrawnPhotoIds(userId, photoIds));
+  const slideCounts = await getDrawingSlideCounts(userId, photoIds);
 
   const spotRows = await db
     .select()
@@ -187,6 +189,8 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
       },
       spots,
       hasDrawing: drawnIds.has(photo.id),
+      // Extra carousel slides: every shared drawing plus the user's own.
+      drawingSlides: slideCounts.get(photo.id) ?? 0,
     };
   });
 }
@@ -1229,6 +1233,101 @@ export async function getPhotoUploader(photoId: number): Promise<number | null> 
   return row?.userId ?? null;
 }
 /** The signed-in user's own canvas for one photo; empty when never drawn on. */
+/**
+ * Slides for the feed carousel: every drawing shared to the feed, plus the
+ * viewer's own canvas when they have not shared it yet. Anyone else's private
+ * row is never returned.
+ */
+export async function getDrawingSlides(
+  photoId: number,
+  viewerId: number,
+): Promise<FeedDrawingSlide[]> {
+  const { db } = getDb();
+
+  const rows = await db
+    .select({
+      id: drawings.id,
+      userId: drawings.userId,
+      strokes: drawings.strokes,
+      visibility: drawings.visibility,
+      isAnonymous: drawings.isAnonymous,
+      updatedAt: drawings.updatedAt,
+      firstName: users.firstName,
+      username: users.username,
+    })
+    .from(drawings)
+    .innerJoin(users, eq(users.id, drawings.userId))
+    .where(
+      and(
+        eq(drawings.photoId, photoId),
+        or(eq(drawings.visibility, "feed"), eq(drawings.userId, viewerId)),
+      ),
+    )
+    .orderBy(desc(drawings.updatedAt));
+
+  return rows
+    .filter((row) => row.strokes.length > 0)
+    // Shared drawings first, the viewer's private one last, so the personal
+    // slide never hides somebody else's.
+    .sort((a, b) => Number(b.visibility === "feed") - Number(a.visibility === "feed"))
+    .map((row) => ({
+      id: row.id,
+      strokes: row.strokes,
+      mine: row.userId === viewerId,
+      shared: row.visibility === "feed",
+      isAnonymous: row.isAnonymous,
+      author: row.isAnonymous
+        ? { firstName: "Anonim", username: null }
+        : { firstName: row.firstName, username: row.username },
+    }));
+}
+
+/** How many carousel slides each photo has for this viewer. */
+export async function getDrawingSlideCounts(
+  viewerId: number,
+  photoIds: number[],
+): Promise<Map<number, number>> {
+  if (photoIds.length === 0) return new Map();
+  const { db } = getDb();
+
+  const rows = await db
+    .select({ photoId: drawings.photoId, slides: sql<number>`count(*)` })
+    .from(drawings)
+    .where(
+      and(
+        inArray(drawings.photoId, photoIds),
+        or(eq(drawings.visibility, "feed"), eq(drawings.userId, viewerId)),
+      ),
+    )
+    .groupBy(drawings.photoId);
+
+  return new Map(rows.map((row) => [row.photoId, Number(row.slides)]));
+}
+
+/** Flips the feed share for one canvas; null when the user has no drawing. */
+export async function setDrawingShare(
+  photoId: number,
+  userId: number,
+  shared: boolean,
+  anonymous: boolean,
+): Promise<{ shared: boolean; anonymous: boolean } | null> {
+  const { db } = getDb();
+
+  const [row] = await db
+    .update(drawings)
+    .set({
+      visibility: shared ? "feed" : "private",
+      isAnonymous: anonymous,
+      sharedAt: shared ? new Date() : null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(drawings.photoId, photoId), eq(drawings.userId, userId)))
+    .returning({ visibility: drawings.visibility, isAnonymous: drawings.isAnonymous });
+
+  if (!row) return null;
+  return { shared: row.visibility === "feed", anonymous: row.isAnonymous };
+}
+
 export async function getDrawingStrokes(
   photoId: number,
   userId: number,

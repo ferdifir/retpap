@@ -20,6 +20,9 @@ export const EVENT_NAMES = [
   "draw_save",
   "draw_clear",
   "draw_cancel",
+  "draw_slide_view",
+  "draw_share",
+  "draw_unshare",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

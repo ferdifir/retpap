@@ -27,3 +27,27 @@ export function paintAccessEnabled(telegramId: number | null): boolean {
 
   return allowList().includes(telegramId);
 }
+
+/** Same list shape, separate switch, so sharing can open later than drawing. */
+function shareAllowList(): number[] {
+  const raw = process.env.DRAW_FEED_SHARE_IDS?.trim();
+  if (!raw) return [];
+
+  return raw
+    .split(",")
+    .map((entry) => Number(entry.trim()))
+    .filter((id) => Number.isSafeInteger(id) && id > 0);
+}
+
+/**
+ * Who may put a drawing into the feed carousel. Empty means only the owner,
+ * so turning the drawing tool on never publishes anybody by accident.
+ */
+export function feedShareEnabled(telegramId: number | null): boolean {
+  if (telegramId === null) return false;
+
+  const owner = ownerTelegramId();
+  if (owner !== null && owner === telegramId) return true;
+
+  return shareAllowList().includes(telegramId);
+}

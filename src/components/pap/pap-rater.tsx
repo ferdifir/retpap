@@ -79,6 +79,8 @@ export function PapRater() {
   const [preference, setPreference] = useState<GenderPreference | null>(null);
   // Staged rollout flag from the session; false until the server says yes.
   const [paintEnabled, setPaintEnabled] = useState(false);
+  // Separate switch: sharing a drawing to the feed carousel.
+  const [drawShareEnabled, setDrawShareEnabled] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [savingPreference, setSavingPreference] = useState(false);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
@@ -132,6 +134,7 @@ export function PapRater() {
           preference: GenderPreference | null;
           owner: boolean;
           paint: boolean;
+          drawShare: boolean;
         };
 
         // Bot first, then the channel; the start gate can be hidden by config.
@@ -156,6 +159,7 @@ export function PapRater() {
           setChannelUrl(sessionBody.channelUrl);
           setPreference(sessionBody.preference ?? null);
           setPaintEnabled(sessionBody.paint === true);
+          setDrawShareEnabled(sessionBody.drawShare === true);
         }
 
         if (nextGate) {
@@ -888,6 +892,11 @@ export function PapRater() {
               onPrevious={() => flipTo(currentIndex - 1)}
               onNext={() => flipTo(currentIndex + 1)}
               paintEnabled={paintEnabled}
+              drawShareEnabled={drawShareEnabled}
+              onHorizontalClaim={() => {
+                // The card owns the horizontal drag; the deck must not flip.
+                swipe.current.active = false;
+              }}
             />
           ))}
         </div>

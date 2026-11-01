@@ -13,8 +13,14 @@ import type { DrawStroke } from "@/lib/draw";
 import { findSpotAt } from "@/lib/reaction-rules";
 import { QUICK_REACTION_EMOJIS } from "@/lib/reactions/catalog";
 import { pushRecentEmoji, useRecentEmojis } from "@/lib/reactions/recent";
-import { haptic } from "@/lib/telegram";
-import type { FeedComment, FeedPhoto, FeedSpot } from "@/lib/feed-types";
+import { haptic, openTelegramUrl } from "@/lib/telegram";
+import { reportUrl } from "@/lib/share";
+import type {
+  FeedComment,
+  FeedDrawingSlide,
+  FeedPhoto,
+  FeedSpot,
+} from "@/lib/feed-types";
 import type { CardPosition, DragAxis, InputSource, ReactionResult, SpotTarget } from "@/lib/types";
 import { CaptionText } from "./caption-text";
 import {
@@ -69,6 +75,10 @@ type PapCardProps = {
   onZoomChange?: (zoomed: boolean) => void;
   /** Staged rollout: the private drawing canvas is only offered to some users. */
   paintEnabled: boolean;
+  /** The card claimed a horizontal drag, so the deck must not flip. */
+  onHorizontalClaim?: () => void;
+  /** Staged rollout: the user may publish their drawing to the feed carousel. */
+  drawShareEnabled: boolean;
 };
 
 const TRANSFORMS: Record<CardPosition, string> = {
@@ -84,6 +94,13 @@ const PREVIEW_DELAY_MS = 700;
 const PREVIEW_SLIDE_MS = 2000;
 const PREVIEW_MAX_MS = 10_000;
 const PREVIEW_SESSION_KEY = "retpap:comment-preview";
+/** Horizontal drag must clear this to become a carousel swipe. */
+const SLIDE_ACTIVATION_PX = 12;
+const SLIDE_THRESHOLD_PX = 60;
+/** Telegram and iOS own the first pixels of the left edge for back swipes. */
+const SLIDE_EDGE_PX = 24;
+/** px/ms; a quick flick changes slide even under the distance threshold. */
+const SLIDE_FLICK_VELOCITY = 0.3;
 
 export function PapCard({
   item,
@@ -105,6 +122,8 @@ export function PapCard({
   onNext,
   onZoomChange,
   paintEnabled,
+  onHorizontalClaim,
+  drawShareEnabled,
 }: PapCardProps) {
   const isActive = position === "active";
   const [ripple, setRipple] = useState<RippleState | null>(null);
@@ -173,7 +192,9 @@ export function PapCard({
       }
 
       try {
-        const response = await fetch("/api/photos/" + item.id + "/drawing");
+        const response = await fetch("/api/photos/" + item.id + "/drawing", {
+          cache: "no-store",
+        });
         if (!response.ok) throw new Error("drawing");
         const body = (await response.json()) as { strokes: DrawStroke[] };
         if (!cancelled) setStrokes(body.strokes);
@@ -186,6 +207,283 @@ export function PapCard({
       cancelled = true;
     };
   }, [isActive, item.hasDrawing, item.id, strokes]);
+
+  // Carousel slides: shared drawings, plus the viewer's own canvas. Fetched
+  // only when the feed says there is at least one, and only on the active card.
+  const [slides, setSlides] = useState<FeedDrawingSlide[] | null>(null);
+  const [slideIndex, setSlideIndex] = useState(0);
+  const [slideDrag, setSlideDrag] = useState(0);
+  const [slideDragging, setSlideDragging] = useState(false);
+  // Asked once after Selesai; the drawing stays private until this is answered.
+  const [sharePrompt, setSharePrompt] = useState(false);
+  const [shareAnonymous, setShareAnonymous] = useState(true);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareFailed, setShareFailed] = useState(false);
+  const slideIndexRef = useRef(0);
+  const slideDragRef = useRef(0);
+  const slideAxis = useRef<"x" | "y" | null>(null);
+  const slideOrigin = useRef<{
+    x: number;
+    y: number;
+    lastX: number;
+    lastT: number;
+    velocity: number;
+  } | null>(null);
+  const slidePointers = useRef(new Set<number>());
+
+  useEffect(() => {
+    if (!isActive || slides !== null || item.drawingSlides <= 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/photos/" + item.id + "/drawings", {
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("slides");
+        const body = (await response.json()) as { slides: FeedDrawingSlide[] };
+        if (!cancelled) setSlides(body.slides);
+      } catch {
+        if (!cancelled) setSlides([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isActive, item.drawingSlides, item.id, slides]);
+
+  // The owner's slide follows the live canvas: clearing every stroke must not
+  // leave the previous snapshot on screen until a reload.
+  const strokesFor = (entry: FeedDrawingSlide) =>
+    entry.mine ? (strokes ?? entry.strokes) : entry.strokes;
+
+  // One slide per drawing, plus the original photo at index 0.
+  const visibleSlides = slides?.filter((entry) => strokesFor(entry).length > 0) ?? null;
+  const slideTotal = visibleSlides ? visibleSlides.length + 1 : item.drawingSlides + 1;
+  const mySlide = slides?.find((entry) => entry.mine) ?? null;
+
+  // A new photo always opens on its original frame.
+  useEffect(() => {
+    slideIndexRef.current = 0;
+    slideDragRef.current = 0;
+    slideAxis.current = null;
+    slideOrigin.current = null;
+    setSlideIndex(0);
+    setSlideDrag(0);
+    setSlideDragging(false);
+  }, [item.id, isActive, nsfwHidden]);
+
+  // Clearing the canvas can remove the slide the user is standing on.
+  useEffect(() => {
+    if (slideIndexRef.current <= slideTotal - 1) return;
+    slideIndexRef.current = 0;
+    slideDragRef.current = 0;
+    setSlideIndex(0);
+    setSlideDrag(0);
+  }, [slideTotal]);
+
+  /** Re-reads the carousel after a share change, so the slide appears at once. */
+  const refreshSlides = async () => {
+    try {
+      const response = await fetch("/api/photos/" + item.id + "/drawings", {
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const body = (await response.json()) as { slides: FeedDrawingSlide[] };
+      setSlides(body.slides);
+      // The slide the user was on may have just been unpublished.
+      if (slideIndexRef.current > body.slides.length) {
+        slideIndexRef.current = 0;
+        setSlideIndex(0);
+      }
+    } catch {
+      // Keep the current list; the next open will refetch.
+    }
+  };
+
+  const setShare = async (shared: boolean, anonymous: boolean): Promise<boolean> => {
+    if (!drawShareEnabled || shareBusy) return false;
+
+    setShareBusy(true);
+    setShareFailed(false);
+
+    // Optimistic: the label flips on tap, the refetch only confirms it. Without
+    // this a slow round trip looks like the button did nothing.
+    const before = slides;
+    setSlides((current) =>
+      current
+        ? current.map((entry) =>
+            entry.mine ? { ...entry, shared, isAnonymous: anonymous } : entry,
+          )
+        : current,
+    );
+
+    try {
+      const response = await fetch("/api/photos/" + item.id + "/drawing/share", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ shared, anonymous }),
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        setSlides(before);
+        setShareFailed(true);
+        return false;
+      }
+
+      track(shared ? "draw_share" : "draw_unshare", {
+        photoId: item.id,
+        meta: shared ? { anonymous } : undefined,
+      });
+      await refreshSlides();
+      return true;
+    } catch {
+      setSlides(before);
+      setShareFailed(true);
+      return false;
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const beginSlide = (x: number, y: number) => {
+    if (!isActive || painting || nsfwHidden || slideTotal < 2) return;
+    if (pinch.zoomed || interaction !== null) return;
+
+    const frame = photoRef.current;
+    if (!frame) return;
+    // Leave the left edge to Telegram: that strip is a back swipe.
+    if (x - frame.getBoundingClientRect().left < SLIDE_EDGE_PX) return;
+
+    slideOrigin.current = {
+      x,
+      y,
+      lastX: x,
+      lastT: performance.now(),
+      velocity: 0,
+    };
+    slideAxis.current = null;
+  };
+
+  const moveSlide = (x: number, y: number) => {
+    const origin = slideOrigin.current;
+    if (!origin) return;
+
+    const dx = x - origin.x;
+    const dy = y - origin.y;
+
+    if (slideAxis.current === null) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < SLIDE_ACTIVATION_PX) return;
+      // Vertical wins ties: flipping photos is the primary gesture.
+      slideAxis.current = Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";
+
+      if (slideAxis.current === "x") {
+        onHorizontalClaim?.();
+        closePanel();
+        clearPress();
+        setSlideDragging(true);
+      }
+    }
+
+    if (slideAxis.current !== "x") return;
+
+    const now = performance.now();
+    const elapsed = now - origin.lastT;
+    if (elapsed > 0) origin.velocity = (x - origin.lastX) / elapsed;
+    origin.lastX = x;
+    origin.lastT = now;
+
+    let next = dx;
+    const atStart = slideIndexRef.current === 0 && next > 0;
+    const atEnd = slideIndexRef.current === slideTotal - 1 && next < 0;
+    if (atStart || atEnd) next *= 0.35;
+
+    slideDragRef.current = next;
+    setSlideDrag(next);
+  };
+
+  const cancelSlide = () => {
+    slideOrigin.current = null;
+    slideAxis.current = null;
+    slideDragRef.current = 0;
+    setSlideDrag(0);
+    setSlideDragging(false);
+  };
+
+  const endSlide = () => {
+    const origin = slideOrigin.current;
+    const axis = slideAxis.current;
+    slideOrigin.current = null;
+    slideAxis.current = null;
+
+    if (!origin || axis !== "x") {
+      cancelSlide();
+      return;
+    }
+
+    const width = photoRef.current?.clientWidth ?? 360;
+    const delta = slideDragRef.current;
+    const threshold = Math.min(SLIDE_THRESHOLD_PX, width * 0.18);
+    const flick = Math.abs(delta) > SLIDE_ACTIVATION_PX && Math.abs(origin.velocity) > SLIDE_FLICK_VELOCITY;
+
+    let next = slideIndexRef.current;
+    if (delta < 0 && (delta < -threshold || flick)) next += 1;
+    else if (delta > 0 && (delta > threshold || flick)) next -= 1;
+    next = Math.max(0, Math.min(slideTotal - 1, next));
+
+    slideDragRef.current = 0;
+    setSlideDrag(0);
+    setSlideDragging(false);
+
+    if (next === slideIndexRef.current) return;
+
+    slideIndexRef.current = next;
+    setSlideIndex(next);
+    closePanel();
+    setSheetOpen(false);
+    setRipple(null);
+    if (next > 0) {
+      track("draw_slide_view", { photoId: item.id, meta: { index: next } });
+    }
+  };
+
+  const handleSlidePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    slidePointers.current.add(event.pointerId);
+    if (slidePointers.current.size !== 1) {
+      cancelSlide();
+      return;
+    }
+    beginSlide(event.clientX, event.clientY);
+  };
+
+  const handleSlidePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!slidePointers.current.has(event.pointerId)) return;
+    moveSlide(event.clientX, event.clientY);
+  };
+
+  const handleSlidePointerEnd = (event: PointerEvent<HTMLDivElement>) => {
+    slidePointers.current.delete(event.pointerId);
+    if (slidePointers.current.size === 0) endSlide();
+  };
+
+  const handleSlideTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (isTouchEcho() || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    if (touch) beginSlide(touch.clientX, touch.clientY);
+  };
+
+  const handleSlideTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    if (isTouchEcho()) return;
+    const touch = event.touches[0];
+    if (touch) moveSlide(touch.clientX, touch.clientY);
+  };
+
+  const handleSlideTouchEnd = () => {
+    if (isTouchEcho()) return;
+    endSlide();
+  };
 
   const handleIntrinsicSize = useCallback((width: number, height: number) => {
     setMediaSize((current) =>
@@ -587,13 +885,15 @@ export function PapCard({
   };
 
   const putStrokes = useCallback(
-    (next: DrawStroke[]) => {
-      void fetch("/api/photos/" + item.id + "/drawing", {
+    (next: DrawStroke[]) =>
+      fetch("/api/photos/" + item.id + "/drawing", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ strokes: next }),
-      }).catch(() => undefined);
-    },
+        cache: "no-store",
+      })
+        .then(() => undefined)
+        .catch(() => undefined),
     [item.id],
   );
 
@@ -614,16 +914,20 @@ export function PapCard({
 
   /** Leaving the canvas must not drop the stroke that was still pending. */
   const flushStrokes = useCallback(() => {
-    if (saveTimer.current === null) return;
+    if (saveTimer.current === null) return Promise.resolve();
     window.clearTimeout(saveTimer.current);
     saveTimer.current = null;
-    putStrokes(strokesRef.current);
+    return putStrokes(strokesRef.current);
   }, [putStrokes]);
 
   const startPainting = () => {
     if (!paintEnabled) return;
     setSheetOpen(false);
     setInteraction(null);
+    setSharePrompt(false);
+    // Drawing always happens on the original frame, never on a shared slide.
+    slideIndexRef.current = 0;
+    setSlideIndex(0);
     // Drawing needs an unobstructed view, so the 18+ blur is lifted here and
     // stays lifted for this card.
     setNsfwHere(true);
@@ -638,18 +942,29 @@ export function PapCard({
   const stopPainting = () => {
     // A pending timer means this session actually changed something.
     const changed = saveTimer.current !== null;
-    flushStrokes();
-
     const final = strokesRef.current;
     if (changed && final.length > 0) {
       track("draw_save", { photoId: item.id, meta: strokeStats(final) });
     }
 
     setPainting(false);
+
+    // The carousel keeps its own copy of the strokes, so re-read it once the
+    // save lands: a cleared canvas must not keep showing the old drawing.
+    // Sharing waits for the same save, otherwise a first-ever drawing can be
+    // shared before its row exists and the PATCH answers 404.
+    void flushStrokes()
+      .then(() => refreshSlides())
+      .then(() => {
+        if (!drawShareEnabled || final.length === 0) return;
+        setShareAnonymous(mySlide?.isAnonymous ?? true);
+        setSharePrompt(true);
+      });
   };
 
   /** Batal throws away this session: the server is put back to the entry state. */
   const cancelPainting = () => {
+    setSharePrompt(false);
     if (saveTimer.current !== null) {
       window.clearTimeout(saveTimer.current);
       saveTimer.current = null;
@@ -666,7 +981,7 @@ export function PapCard({
     const previous = entryStrokes.current;
     strokesRef.current = previous;
     setStrokes(previous);
-    putStrokes(previous);
+    void putStrokes(previous).then(() => refreshSlides());
     setPainting(false);
   };
 
@@ -737,6 +1052,25 @@ export function PapCard({
           ref={photoRef}
           className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/80 shadow-inner"
         >
+          <div
+            className="absolute inset-0 flex touch-none"
+            style={{
+              transform:
+                "translate3d(calc(" + -slideIndex * 100 + "% + " + slideDrag + "px), 0, 0)",
+              transition: slideDragging
+                ? "none"
+                : "transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)",
+            }}
+            onPointerDown={handleSlidePointerDown}
+            onPointerMove={handleSlidePointerMove}
+            onPointerUp={handleSlidePointerEnd}
+            onPointerCancel={handleSlidePointerEnd}
+            onTouchStart={handleSlideTouchStart}
+            onTouchMove={handleSlideTouchMove}
+            onTouchEnd={handleSlideTouchEnd}
+            onTouchCancel={handleSlideTouchEnd}
+          >
+          <div className="relative h-full w-full shrink-0">
           {nsfwHidden ? (
             blurSrc ? (
               <Image
@@ -977,6 +1311,87 @@ export function PapCard({
               onCommit={commitStrokes}
             />
           ) : null}
+          </div>
+
+          {!nsfwHidden && !painting
+            ? visibleSlides?.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="relative h-full w-full shrink-0 bg-slate-950"
+                >
+                  {blurSrc ? (
+                    <Image
+                      src={blurSrc}
+                      alt={entry.mine ? "Gambarmu" : "Gambar di foto ini"}
+                      fill
+                      sizes="(max-width: 640px) 100vw, 448px"
+                      className="pointer-events-none select-none object-contain"
+                    />
+                  ) : null}
+
+                  <DrawingOverlay box={box} strokes={strokesFor(entry)} />
+
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between gap-2 bg-gradient-to-t from-slate-950/85 via-slate-950/40 to-transparent px-3 pt-8 pb-2">
+                    <span className="text-[11px] leading-tight font-semibold text-slate-200">
+                      {entry.mine
+                        ? entry.shared
+                          ? "Gambarmu · dibagikan" + (entry.isAnonymous ? " anonim" : "")
+                          : "Gambarmu · hanya kamu yang lihat"
+                        : "Gambar oleh " + entry.author.firstName}
+                      {entry.mine && shareFailed ? (
+                        <span className="block text-[10px] font-semibold text-rose-300">
+                          Gagal menyimpan, coba lagi
+                        </span>
+                      ) : null}
+                    </span>
+                    {entry.mine ? (
+                      drawShareEnabled ? (
+                        <button
+                          type="button"
+                          disabled={shareBusy}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            // Keep the label this slide already had.
+                            void setShare(!entry.shared, entry.isAnonymous);
+                          }}
+                          className="pointer-events-auto rounded-md border border-white/15 bg-slate-950/70 px-2 py-1 text-[10px] font-bold text-slate-300 active:scale-95 disabled:opacity-50"
+                        >
+                          {entry.shared ? "Berhenti bagikan" : "Bagikan"}
+                        </button>
+                      ) : null
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openTelegramUrl(reportUrl(item.id));
+                        }}
+                        className="pointer-events-auto rounded-md border border-white/15 bg-slate-950/70 px-2 py-1 text-[10px] font-bold text-slate-300 active:scale-95"
+                      >
+                        Laporkan
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            : null}
+          </div>
+
+          {!nsfwHidden && !painting && slideTotal > 1 ? (
+            <div className="pointer-events-none absolute inset-x-0 top-2 z-40 flex justify-center">
+              <div className="flex items-center gap-1 rounded-full bg-slate-950/70 px-2 py-1 backdrop-blur-sm">
+                {Array.from({ length: slideTotal }).map((_, index) => (
+                  <span
+                    key={index}
+                    className={
+                      "h-1.5 rounded-full transition-all " +
+                      (index === slideIndex ? "w-4 bg-cyan-300" : "w-1.5 bg-white/40")
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="relative z-10 shrink-0 space-y-2">
@@ -996,6 +1411,53 @@ export function PapCard({
               onDone={stopPainting}
               onCancel={cancelPainting}
             />
+          ) : sharePrompt ? (
+            <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-2">
+              <p className="text-center text-[11px] font-bold text-slate-100">
+                Bagikan gambar ini ke feed?
+              </p>
+              <p className="text-center text-[10px] leading-snug text-slate-500">
+                Orang lain bisa menggeser ke gambarmu di foto ini. Jangan tulis nama,
+                nomor, atau akun di gambar.
+              </p>
+
+              <label className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1.5">
+                <span className="text-[10.5px] font-semibold text-slate-300">
+                  Tampilkan nama saya
+                </span>
+                <input
+                  type="checkbox"
+                  checked={!shareAnonymous}
+                  onChange={(event) => setShareAnonymous(!event.target.checked)}
+                  className="size-4 accent-cyan-400"
+                />
+              </label>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={shareBusy}
+                  onClick={() => {
+                    setSharePrompt(false);
+                    if (mySlide?.shared) void setShare(false, shareAnonymous);
+                  }}
+                  className="flex-1 rounded-lg border border-white/10 bg-slate-950/60 py-2 text-[11px] font-bold text-slate-300 active:scale-95 disabled:opacity-50"
+                >
+                  Simpan privat
+                </button>
+                <button
+                  type="button"
+                  disabled={shareBusy}
+                  onClick={async () => {
+                    const ok = await setShare(true, shareAnonymous);
+                    if (ok) setSharePrompt(false);
+                  }}
+                  className="flex-1 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 py-2 text-[11px] font-bold text-white shadow-lg shadow-cyan-500/20 active:scale-95 disabled:opacity-50"
+                >
+                  Bagikan
+                </button>
+              </div>
+            </div>
           ) : (
             <>
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-2 py-1.5">

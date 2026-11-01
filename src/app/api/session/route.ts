@@ -4,7 +4,7 @@ import { upsertUser } from "@/db/queries";
 import { probePrivateChat } from "@/lib/bot/api";
 import { CHANNEL_URL, isChannelMember, ownerTelegramId } from "@/lib/bot/channel";
 import { verifyInitData } from "@/lib/init-data";
-import { paintAccessEnabled } from "@/lib/paint-access";
+import { feedShareEnabled, paintAccessEnabled } from "@/lib/paint-access";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken } from "@/lib/session";
 
 const bodySchema = z.object({
@@ -92,6 +92,8 @@ export async function POST(request: Request) {
     owner: ownerTelegramId() === user.telegramId,
     // Staged rollout: only listed ids get the drawing tool.
     paint: paintAccessEnabled(user.telegramId),
+    // Separate switch: who may publish a drawing to the feed carousel.
+    drawShare: feedShareEnabled(user.telegramId),
     user: {
       id: user.id,
       firstName: user.firstName,
