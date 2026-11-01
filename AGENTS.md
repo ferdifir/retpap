@@ -13,3 +13,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 Kalau user minta kirim/edit/pin pesan ke channel RetPAP, langsung baca dan ikuti
 `docs/channel-message.md`. Tidak perlu explore `src/` atau `scripts/`.
 
+## Batasan channel dan produksi
+
+Wajib dibaca sebelum menyentuh channel atau produksi. Lihat `docs/insiden-2026-11-01.md`.
+
+1. Teks yang sudah disetujui owner dikirim apa adanya. Tidak ada tambahan baris, CTA, atau perbaikan gaya.
+2. Tidak ada handle, username, atau link karangan. Kalau tidak ada di env/DB/docs, tidak dikirim.
+3. Pesan channel yang salah: hapus lalu kirim ulang. Jangan pernah diedit.
+4. Asisten tidak mengirim ke channel atas inisiatif sendiri. Draft ditulis ke file, owner yang mengirim.
+5. Perubahan produksi (DB write, hapus post, hapus pesan, deploy, cron) hanya setelah persetujuan eksplisit per aksi.
+
