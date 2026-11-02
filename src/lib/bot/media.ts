@@ -12,10 +12,10 @@ const SLUG_PATTERN = /^[A-Za-z0-9_-]{10,24}$/;
  * The same strength is used for 18+ and non-18+ media: the badge, not the blur,
  * is what marks a post as 18+.
  */
-const CHANNEL_BLUR_SIGMA = 32;
+export const CHANNEL_BLUR_SIGMA = 32;
 
 /** Keeps the channel upload small; Telegram rejects huge dimensions anyway. */
-const CHANNEL_MAX_DIMENSION = 1600;
+export const CHANNEL_MAX_DIMENSION = 1600;
 
 /** Telegram recommends video thumbnails no wider than 320px. */
 const CHANNEL_THUMBNAIL_DIMENSION = 320;

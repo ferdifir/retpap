@@ -295,6 +295,8 @@ export const drawings = pgTable(
     /** Author label in the feed carousel; false shows the name, like comments. */
     isAnonymous: boolean("is_anonymous").notNull().default(true),
     sharedAt: timestamp("shared_at", { withTimezone: true }),
+    /** Channel post for this drawing, so unshare can delete it again. */
+    channelMessageId: bigint("channel_message_id", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

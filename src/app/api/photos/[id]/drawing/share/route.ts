@@ -1,9 +1,14 @@
+import { after } from "next/server";
 import {
   getUserTelegramId,
   isPhotoActive,
   setDrawingShare,
 } from "@/db/queries";
 import { getSessionUserId } from "@/lib/auth-server";
+import {
+  publishDrawingToChannel,
+  removeDrawingFromChannel,
+} from "@/lib/bot/drawing-channel";
 import { feedShareEnabled } from "@/lib/paint-access";
 
 /** Publishes or hides the session user's own canvas for one photo. */
@@ -42,6 +47,17 @@ export async function PATCH(
   if (!result) {
     return Response.json({ error: "drawing_not_found" }, { status: 404 });
   }
+
+  // The channel post follows the share, never blocks it: a failed render or a
+  // Telegram error leaves the drawing shared in the feed.
+  after(async () => {
+    try {
+      if (result.shared) await publishDrawingToChannel(photoId, userId);
+      else await removeDrawingFromChannel(photoId, userId);
+    } catch (error) {
+      console.error("[drawing] channel sync failed", photoId, error);
+    }
+  });
 
   return Response.json(result);
 }

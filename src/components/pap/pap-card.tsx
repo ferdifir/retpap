@@ -14,7 +14,7 @@ import { findSpotAt } from "@/lib/reaction-rules";
 import { QUICK_REACTION_EMOJIS } from "@/lib/reactions/catalog";
 import { pushRecentEmoji, useRecentEmojis } from "@/lib/reactions/recent";
 import { haptic, openTelegramUrl } from "@/lib/telegram";
-import { reportUrl } from "@/lib/share";
+import { consumeDrawingSlideTarget, reportUrl } from "@/lib/share";
 import type {
   FeedComment,
   FeedDrawingSlide,
@@ -273,6 +273,20 @@ export function PapCard({
     setSlideDrag(0);
     setSlideDragging(false);
   }, [item.id, isActive, nsfwHidden]);
+
+  // A `startapp=draw-...` launch opens straight on that drawing's slide.
+  useEffect(() => {
+    if (!isActive || !visibleSlides) return;
+
+    const target = consumeDrawingSlideTarget(item.slug);
+    if (target === null) return;
+
+    const index = visibleSlides.findIndex((entry) => entry.id === target);
+    if (index < 0) return;
+
+    slideIndexRef.current = index + 1;
+    setSlideIndex(index + 1);
+  }, [isActive, item.slug, visibleSlides]);
 
   // Clearing the canvas can remove the slide the user is standing on.
   useEffect(() => {

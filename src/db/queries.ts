@@ -1373,6 +1373,46 @@ export async function setDrawingShare(
   return { shared: row.visibility === "feed", anonymous: row.isAnonymous };
 }
 
+/** Everything the channel post needs for one user's drawing on a photo. */
+export async function getSharedDrawingContext(
+  photoId: number,
+  userId: number,
+): Promise<{
+  drawingId: number;
+  strokes: DrawStroke[];
+  channelMessageId: number | null;
+  slug: string;
+} | null> {
+  const { db } = getDb();
+
+  const [row] = await db
+    .select({
+      drawingId: drawings.id,
+      strokes: drawings.strokes,
+      channelMessageId: drawings.channelMessageId,
+      slug: photos.slug,
+    })
+    .from(drawings)
+    .innerJoin(photos, eq(photos.id, drawings.photoId))
+    .where(and(eq(drawings.photoId, photoId), eq(drawings.userId, userId)));
+
+  return row ?? null;
+}
+
+/** Remembers the channel post so unshare can delete it later. */
+export async function setDrawingChannelMessage(
+  photoId: number,
+  userId: number,
+  messageId: number | null,
+): Promise<void> {
+  const { db } = getDb();
+
+  await db
+    .update(drawings)
+    .set({ channelMessageId: messageId })
+    .where(and(eq(drawings.photoId, photoId), eq(drawings.userId, userId)));
+}
+
 export async function getDrawingStrokes(
   photoId: number,
   userId: number,

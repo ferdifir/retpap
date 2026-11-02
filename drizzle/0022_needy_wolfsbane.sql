@@ -1,0 +1,1 @@
+ALTER TABLE "drawings" ADD COLUMN "channel_message_id" bigint;

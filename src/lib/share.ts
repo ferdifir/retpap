@@ -33,7 +33,11 @@ export type StartTarget =
   | { type: "leaderboard"; period: LeaderboardPeriod }
   | { type: "stats" }
   | { type: "admin" }
+  | { type: "drawing"; slug: string; drawingId: number }
   | { type: "photo"; slug: string };
+
+/** `draw-<id>-<slug>`; slugs are base64url, so the prefix cannot collide. */
+const DRAWING_START_PARAM = /^draw-(\d+)-([A-Za-z0-9_-]{10,24})$/;
 
 const BOT_USERNAME =
   process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "menfesaibot";
@@ -90,6 +94,18 @@ export function shareUrlFor(slug: string): string {
   );
 }
 
+/** Deep link that opens the Mini App on one drawing slide of a photo. */
+export function drawingStartUrl(drawingId: number, slug: string): string {
+  return (
+    "https://t.me/" +
+    BOT_USERNAME +
+    "?startapp=draw-" +
+    drawingId +
+    "-" +
+    encodeURIComponent(slug)
+  );
+}
+
 /** Telegram share sheet prefilled with the deep link and a short blurb. */
 export function telegramShareLink(slug: string, caption: string): string {
   const text = caption
@@ -110,12 +126,27 @@ export function telegramShareLink(slug: string, caption: string): string {
 export function readStartTarget(): StartTarget | null {
   if (typeof window === "undefined") return null;
 
-  const startParam = getTelegramWebApp()?.initDataUnsafe?.start_param?.trim();
+  return parseStartParam(getTelegramWebApp()?.initDataUnsafe?.start_param);
+}
+
+/** Pure parser behind `readStartTarget`, so the deep link format stays testable. */
+export function parseStartParam(raw: string | null | undefined): StartTarget | null {
+  const startParam = raw?.trim();
   if (!startParam) return null;
 
   const lower = startParam.toLowerCase();
   if (lower === STATS_START_PARAM) return { type: "stats" };
   if (lower === ADMIN_START_PARAM) return { type: "admin" };
+
+  // Parsed before the lowercase map: slugs keep their original case.
+  const drawing = DRAWING_START_PARAM.exec(startParam);
+  if (drawing) {
+    return {
+      type: "drawing",
+      slug: drawing[2],
+      drawingId: Number(drawing[1]),
+    };
+  }
 
   const period = PERIOD_BY_START_PARAM.get(lower);
   if (period) return { type: "leaderboard", period };
@@ -139,7 +170,23 @@ export function readSharedSlug(): string | null {
   if (fromQuery) return fromQuery;
 
   const target = readStartTarget();
-  return target?.type === "photo" ? target.slug : null;
+  return target?.type === "photo" || target?.type === "drawing"
+    ? target.slug
+    : null;
+}
+
+/**
+ * Drawing slide a `startapp=draw-...` launch asked for. Consumed once, so
+ * swiping away or changing cards does not jump back to it.
+ */
+export function consumeDrawingSlideTarget(slug: string): number | null {
+  if (drawingSlideConsumed) return null;
+
+  const target = readStartTarget();
+  if (target?.type !== "drawing" || target.slug !== slug) return null;
+
+  drawingSlideConsumed = true;
+  return target.drawingId;
 }
 
 /**
@@ -147,6 +194,9 @@ export function readSharedSlug(): string | null {
  * starts a new app session, where the current URL decides what to show.
  */
 let startTargetHandled = false;
+
+/** Same idea for the drawing slide: one launch, one jump. */
+let drawingSlideConsumed = false;
 
 /** Stops later boots from routing the same launch target again. */
 export function markStartTargetHandled(): void {

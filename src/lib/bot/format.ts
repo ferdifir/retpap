@@ -35,6 +35,10 @@ export function anonymousCommentNotificationBody(body: string): string {
   return "💬 <b>Seseorang</b> mengomentari fotomu:\n\n<i>" + escapeHtml(body) + "</i>";
 }
 
+/** Channel caption for a shared drawing; the owner approved this verbatim. */
+export const DRAWING_CHANNEL_CAPTION =
+  "<b>“Coretan dari RetPAP”</b>\n\nCoretan ini dibuat user di atas foto. Lihat versi jelas + coretan lainnya di aplikasi.";
+
 /** Ratings and reactions are anonymous in the feed, so the owner stays too. */
 export function ratingNotificationBody(score: number): string {
   const shown = Number.isInteger(score) ? String(score) : score.toFixed(1);
