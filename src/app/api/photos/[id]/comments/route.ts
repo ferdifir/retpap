@@ -7,6 +7,7 @@ import {
   isPhotoActive,
 } from "@/db/queries";
 import { getSessionUserId } from "@/lib/auth-server";
+import { deliverAfterResponse } from "@/lib/bot/notify";
 import { MAX_COMMENT_LENGTH, normaliseComment } from "@/lib/comment-rules";
 
 const bodySchema = z
@@ -68,6 +69,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!outcome.ok) {
     return Response.json({ error: outcome.reason }, { status: 404 });
   }
+
+  deliverAfterResponse([outcome.notificationId]);
 
   return Response.json({
     spotId: outcome.spotId,

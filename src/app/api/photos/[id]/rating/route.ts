@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isPhotoActive, ratePhoto } from "@/db/queries";
 import { getSessionUserId } from "@/lib/auth-server";
+import { deliverAfterResponse } from "@/lib/bot/notify";
 
 const bodySchema = z.object({ score: z.number().min(1).max(10) });
 
@@ -17,5 +18,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return Response.json({ error: "invalid_body" }, { status: 400 });
 
-  return Response.json(await ratePhoto(photoId, userId, parsed.data.score));
+  const outcome = await ratePhoto(photoId, userId, parsed.data.score);
+  deliverAfterResponse([outcome.notificationId]);
+
+  return Response.json(outcome);
 }

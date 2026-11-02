@@ -133,8 +133,6 @@ export const photos = pgTable(
     userId: bigint("user_id", { mode: "number" }).references(() => users.id, {
       onDelete: "set null",
     }),
-    /** Last time a reaction/rating digest went out for this photo. */
-    lastDigestAt: timestamp("last_digest_at", { withTimezone: true }),
     /** Channel post for this photo, so a manual delete can remove it too. */
     channelMessageId: bigint("channel_message_id", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -352,8 +350,8 @@ export const leaderboardAnnouncements = pgTable(
 
 /**
  * Outbox for uploader notifications. Rows are written inside the same
- * transaction as the action, then delivered by the cron sweep, so a failed
- * Telegram call is retried instead of lost.
+ * transaction as the action, then delivered right after that request, so the
+ * actor never waits on Telegram.
  */
 export const notifications = pgTable(
   "notifications",
@@ -365,7 +363,7 @@ export const notifications = pgTable(
     photoId: bigint("photo_id", { mode: "number" })
       .notNull()
       .references(() => photos.id, { onDelete: "cascade" }),
-    /** "comment" | "digest" */
+    /** "comment" | "rating" | "reaction" */
     kind: text("kind").notNull(),
     /** Idempotency key, e.g. "comment:12". */
     dedupeKey: text("dedupe_key").notNull().unique(),
@@ -381,7 +379,7 @@ export const notifications = pgTable(
     index("notifications_pending_idx").on(table.userId, table.sentAt),
     check(
       "notifications_kind_valid",
-      sql`${table.kind} in ('comment', 'digest')`,
+      sql`${table.kind} in ('comment', 'rating', 'reaction')`,
     ),
   ],
 );

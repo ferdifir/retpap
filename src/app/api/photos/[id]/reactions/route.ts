@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { clearReaction, getPhotoSpots, isPhotoActive, reactToPhoto } from "@/db/queries";
 import { getSessionUserId } from "@/lib/auth-server";
+import { deliverAfterResponse } from "@/lib/bot/notify";
 
 const bodySchema = z
   .object({
@@ -33,6 +34,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const status = outcome.reason === "unknown_emoji" ? 400 : 404;
     return Response.json({ error: outcome.reason }, { status });
   }
+
+  deliverAfterResponse([outcome.notificationId]);
 
   return Response.json({
     spotId: outcome.spotId,

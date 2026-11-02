@@ -1,5 +1,10 @@
 import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
-import { anonymousCommentNotificationBody, commentNotificationBody } from "@/lib/bot/format";
+import {
+  anonymousCommentNotificationBody,
+  commentNotificationBody,
+  ratingNotificationBody,
+  reactionNotificationBody,
+} from "@/lib/bot/format";
 import {
   LEADERBOARD_PERIODS,
   leaderboardWindow,
@@ -38,6 +43,45 @@ import type {
 } from "@/lib/feed-types";
 
 export type { FeedPhoto, FeedSpot };
+
+/**
+ * Writes the uploader notification for a rating or reaction. Ratings and
+ * reactions are anonymous in the feed, so the body never names the actor.
+ * Returns the row id for delivery after the response.
+ */
+async function notifyOwner(
+  tx: Tx,
+  input: {
+    photoId: number;
+    ownerId: number | null;
+    actorId: number;
+    kind: "rating" | "reaction";
+    dedupeKey: string;
+    body: string;
+  },
+): Promise<number | null> {
+  if (!input.ownerId || input.ownerId === input.actorId) return null;
+
+  const [owner] = await tx
+    .select({ notify: users.notify })
+    .from(users)
+    .where(eq(users.id, input.ownerId));
+  if (!owner?.notify) return null;
+
+  const [row] = await tx
+    .insert(notifications)
+    .values({
+      userId: input.ownerId,
+      photoId: input.photoId,
+      kind: input.kind,
+      dedupeKey: input.dedupeKey,
+      body: input.body,
+    })
+    .onConflictDoNothing()
+    .returning({ id: notifications.id });
+
+  return row?.id ?? null;
+}
 
 function summarise(
   rows: { emoji: string; id: number; userId: number }[],
@@ -389,7 +433,12 @@ export type ReactInput = {
 const MAX_REACTIONS_PER_PHOTO = 3;
 
 export type ReactOutcome =
-  | { ok: true; spotId: number; removed: boolean }
+  | {
+      ok: true;
+      spotId: number;
+      removed: boolean;
+      notificationId?: number | null;
+    }
   | {
       ok: false;
       reason: "spot_not_found" | "invalid_target" | "unknown_emoji";
@@ -445,7 +494,17 @@ export async function reactToPhoto(
         .update(reactions)
         .set({ emoji: input.emoji })
         .where(eq(reactions.id, mineAtSpot.id));
-      return { ok: true, spotId, removed: false } as const;
+
+      const notificationId = await notifyOwner(tx, {
+        photoId,
+        ownerId: photo.userId,
+        actorId: userId,
+        kind: "reaction",
+        dedupeKey: "reaction:" + photoId + ":" + userId + ":" + input.emoji,
+        body: reactionNotificationBody(input.emoji),
+      });
+
+      return { ok: true, spotId, removed: false, notificationId } as const;
     }
 
     // A new spot past the cap drops the oldest reaction, so the newest always
@@ -460,7 +519,16 @@ export async function reactToPhoto(
       .insert(reactions)
       .values({ photoId, spotId, userId, emoji: input.emoji });
 
-    return { ok: true, spotId, removed: false } as const;
+    const notificationId = await notifyOwner(tx, {
+      photoId,
+      ownerId: photo.userId,
+      actorId: userId,
+      kind: "reaction",
+      dedupeKey: "reaction:" + photoId + ":" + userId + ":" + input.emoji,
+      body: reactionNotificationBody(input.emoji),
+    });
+
+    return { ok: true, spotId, removed: false, notificationId } as const;
   });
 }
 
@@ -484,11 +552,18 @@ export async function ratePhoto(
 ) {
   const { db } = getDb();
 
+  let notificationId: number | null = null;
+
   const rows = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select({ score: ratings.score })
       .from(ratings)
       .where(and(eq(ratings.photoId, photoId), eq(ratings.userId, userId)));
+
+    const [photo] = await tx
+      .select({ userId: photos.userId })
+      .from(photos)
+      .where(eq(photos.id, photoId));
 
     await tx
       .insert(ratings)
@@ -502,6 +577,16 @@ export async function ratePhoto(
     // and a repeated value would make the history look like a new decision.
     if (existing?.score !== score) {
       await tx.insert(ratingHistory).values({ photoId, userId, score });
+
+      notificationId = await notifyOwner(tx, {
+        photoId,
+        ownerId: photo?.userId ?? null,
+        actorId: userId,
+        kind: "rating",
+        // Same score twice stays one notification; a changed score is a new event.
+        dedupeKey: "rating:" + photoId + ":" + userId + ":" + score,
+        body: ratingNotificationBody(score),
+      });
     }
 
     return tx
@@ -515,6 +600,7 @@ export async function ratePhoto(
     avg: rows.length > 0 ? Math.round((sum / rows.length) * 10) / 10 : 0,
     votes: rows.length,
     mine: score,
+    notificationId,
   };
 }
 
@@ -634,13 +720,14 @@ export type PendingNotification = {
   attempts: number;
 };
 
-/** Oldest unsent notifications, joined with the data the sender needs. */
-export async function takePendingNotifications(
-  limit = 20,
+/** The rows a single action produced, joined with what the sender needs. */
+export async function takeNotifications(
+  ids: number[],
 ): Promise<PendingNotification[]> {
+  if (ids.length === 0) return [];
   const { db } = getDb();
 
-  const rows = await db
+  return db
     .select({
       id: notifications.id,
       userId: notifications.userId,
@@ -653,11 +740,14 @@ export async function takePendingNotifications(
     .from(notifications)
     .innerJoin(users, eq(users.id, notifications.userId))
     .innerJoin(photos, eq(photos.id, notifications.photoId))
-    .where(and(isNull(notifications.sentAt), lt(notifications.attempts, 5)))
-    .orderBy(notifications.id)
-    .limit(limit);
-
-  return rows;
+    .where(
+      and(
+        inArray(notifications.id, ids),
+        isNull(notifications.sentAt),
+        lt(notifications.attempts, 5),
+      ),
+    )
+    .orderBy(notifications.id);
 }
 
 export async function markNotificationSent(id: number): Promise<void> {
@@ -815,56 +905,6 @@ export async function toggleNotifyByTelegram(
   return next;
 }
 
-export type DigestCandidate = {
-  photoId: number;
-  userId: number;
-  telegramId: number;
-  slug: string;
-  reactions: number;
-  ratings: number;
-  comments: number;
-};
-
-/**
- * Photos with fresh activity and an owner who still wants notifications.
- * Digests are throttled to one per photo per 15 minutes.
- */
-export async function listDigestCandidates(
-  limit = 10,
-): Promise<DigestCandidate[]> {
-  const { db } = getDb();
-
-  const result = await db.execute(sql`
-    with base as (
-      select p.id, p.slug, p.user_id, u.telegram_id,
-             coalesce(p.last_digest_at, p.created_at) as since
-      from photos p
-      join users u on u.id = p.user_id
-      where p.is_active
-        and u.notify
-        and coalesce(p.last_digest_at, p.created_at) < now() - interval '15 minutes'
-    )
-    select b.id as "photoId", b.user_id as "userId", b.telegram_id as "telegramId", b.slug,
-      (select count(*)::int from reactions r where r.photo_id = b.id and r.created_at > b.since) as reactions,
-      (select count(*)::int from ratings ra where ra.photo_id = b.id and ra.updated_at > b.since) as ratings,
-      (select count(*)::int from comments c where c.photo_id = b.id and c.created_at > b.since) as comments
-    from base b
-    order by b.id
-    limit ${limit}
-  `);
-
-  return (result.rows as unknown as DigestCandidate[]).filter(
-    (row) => row.reactions + row.ratings + row.comments > 0,
-  );
-}
-
-export async function markDigestSent(photoId: number): Promise<void> {
-  const { db } = getDb();
-  await db
-    .update(photos)
-    .set({ lastDigestAt: new Date() })
-    .where(eq(photos.id, photoId));
-}
 
 /** Rebuilds every spot of one photo. Used to reconcile after a write. */
 export async function getPhotoSpots(
@@ -930,7 +970,7 @@ export type CommentInput = {
   body: string;
 };
 export type CommentOutcome =
-  | { ok: true; spotId: number }
+  | { ok: true; spotId: number; notificationId?: number | null }
   | { ok: false; reason: "spot_not_found" | "invalid_target" };
 
 /**
@@ -951,6 +991,8 @@ export async function addComment(
       .where(eq(photos.id, photoId))
       .for("update");
     if (!photo) return { ok: false, reason: "invalid_target" } as const;
+
+    let notificationId: number | null = null;
 
     const resolved = await resolveSpot(tx, photo, input, "comment");
     if (!resolved.ok) return resolved;
@@ -1002,7 +1044,7 @@ export async function addComment(
         .where(eq(users.id, photo.userId));
 
       if (owner?.notify && author) {
-        await tx
+        const [row] = await tx
           .insert(notifications)
           .values({
             userId: owner.id,
@@ -1020,11 +1062,14 @@ export async function addComment(
                   input.body,
                 ),
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: notifications.id });
+
+        notificationId = row?.id ?? null;
       }
     }
 
-    return { ok: true, spotId: resolved.spotId } as const;
+    return { ok: true, spotId: resolved.spotId, notificationId } as const;
   });
 }
 

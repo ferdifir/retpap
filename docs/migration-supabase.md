@@ -13,7 +13,7 @@ sekarang berjalan tiap menit dipecah jadi reaktif + scheduler kalender.
 | Web, API, webhook | Vercel Hobby | request | Next 16 + `cacheComponents` paling aman di Vercel |
 | Database | Supabase free (500 MB) | — | Postgres 16, sama dengan sekarang |
 | Media (jpg/mp4) | Cloudflare R2 | — | egress gratis; Supabase free cuma 5 GB/bulan |
-| Notify | Vercel route | trigger DB (`pg_net`) + sweep 5 menit | kejadian, bukan jadwal |
+| Notify | request yang membuatnya | `after()` setelah response | kejadian, bukan jadwal |
 | Recap leaderboard | Vercel route | `pg_cron` 1x/hari | kejadian kalender |
 | Scheduled upload | Android (Termux) | antrean + window catch-up | sumber foto memang di HP |
 | Transcode video | Vercel (`ffmpeg-static`) | webhook | user menunggu, tidak boleh bergantung pada HP |
@@ -32,7 +32,7 @@ Telegram ──webhook──> Vercel (Next)
                          │  └─ Bot API (channel, notif)
                          │
 Supabase trigger ──pg_net──> /api/cron/notify?kind=flush
-Supabase pg_cron ──pg_net──> /api/cron/notify?kind=recap   (00:05 WIB)
+Supabase pg_cron ──pg_net──> /api/cron/notify   (00:05 WIB, recap saja)
 Android (Termux) ──poll/realtime──> tabel upload_jobs ──> R2 + Postgres + Bot API
 ```
 
@@ -127,92 +127,30 @@ minimal seminggu. Simpan `pg_dump` terakhir di luar server.
 
 ## 2. Perubahan kode
 
-### 2.1 Notify: dari sweep ke reaktif
+### 2.1 Notify: per event, bukan sweep
 
-Sekarang `flushNotifications()` dipanggil tiap menit dan mengambil 20 baris
-paling awal. Untuk reaktif, tiga hal harus berubah.
+Status: **sudah diimplementasikan** (2026-11-02). Ini yang menggantikan cron
+satu menit, jadi tidak ada trigger `pg_net` dan tidak ada klaim baris.
 
-**(a) Klaim baris — wajib lebih dulu.**
-`takePendingNotifications` sekarang hanya `SELECT ... LIMIT 20` tanpa klaim.
-Dengan trigger + sweep berjalan bersamaan, satu notifikasi bisa terkirim dua
-kali. Ganti jadi satu statement `UPDATE ... RETURNING` (atau `FOR UPDATE SKIP
-LOCKED`) yang langsung menandai `claimed_at`.
-
-```sql
-alter table notifications add column claimed_at timestamptz;
-alter table notifications add column next_attempt_at timestamptz not null default now();
-create index notifications_ready_idx
-  on notifications (next_attempt_at) where sent_at is null;
-```
-
-```sql
-update notifications n set claimed_at = now()
-where n.id in (
-  select id from notifications
-  where sent_at is null and claimed_at is null
-    and attempts < 5 and next_attempt_at <= now()
-  order by id limit $1
-  for update skip locked
-)
-returning n.id, ...;
-```
-
-**(b) Trigger statement-level, bukan per baris.** Satu aksi bisa menulis
-beberapa notifikasi sekaligus; per-baris berarti 20 HTTP call.
-
-```sql
-create or replace function public.retpap_flush_hook() returns trigger
-language plpgsql security definer as $$
-declare secret text;
-begin
-  select decrypted_secret into secret
-  from vault.decrypted_secrets where name = 'cron_secret';
-
-  perform net.http_post(
-    url := 'https://bot.linkviu.my.id/api/cron/notify?kind=flush',
-    headers := jsonb_build_object(
-      'content-type', 'application/json',
-      'x-cron-secret', secret
-    ),
-    body := '{}'::jsonb,
-    timeout_milliseconds := 5000
-  );
-  return null;
-end $$;
-
-create trigger notifications_flush
-after insert on notifications
-for each statement execute function public.retpap_flush_hook();
-```
-
-`net.http_post` mengantre request dan langsung kembali, jadi transaksi yang
-menulis notifikasi tidak ikut menunggu HTTP.
-
-**(c) Sweep tetap ada, tapi lambat.** Kalau `pg_net` gagal (DNS, 5xx, timeout),
-tidak ada yang mencoba ulang. Sweep 5 menit adalah jaring pengaman, dan baris
-yang gagal diberi `next_attempt_at` + backoff.
-
-```sql
-select cron.schedule('retpap-notify-sweep', '*/5 * * * *', $$
-  select net.http_post(
-    url := 'https://bot.linkviu.my.id/api/cron/notify?kind=flush',
-    headers := jsonb_build_object('x-cron-secret',
-      (select decrypted_secret from vault.decrypted_secrets where name='cron_secret')),
-    body := '{}'::jsonb
-  );
-$$);
-```
-
-**(d) Pisahkan endpoint per `kind`.** Sekarang `/api/cron/notify` selalu
-menjalankan flush + recap. Dengan `?kind=flush` dan `?kind=recap`, trigger
-tidak ikut memicu pengecekan recap.
+- `addComment`, `ratePhoto`, `reactToPhoto` menulis baris `notifications` di
+  transaksi yang sama dengan aksinya, hanya kalau pemilik foto mengaktifkan
+  notifikasi dan bukan pelakunya sendiri.
+- Route memanggil `deliverAfterResponse([...])`; `after()` mengirim pesan
+  Telegram setelah response selesai, jadi user tidak menunggu bot API.
+- Digest 15 menit dihapus. Rating dan reaksi sekarang memicu notifikasi
+  sendiri-sendiri, dan isinya anonim ("Seseorang") karena rating/reaksi memang
+  tidak menampilkan identitas di feed.
+- `/api/cron/notify` tinggal recap leaderboard. Di Vercel cukup cron harian.
+- Baris yang gagal terkirim tetap tersimpan dengan `attempts` + `error`, tapi
+  **tidak di-retry otomatis**. Kalau nanti butuh retry, tambahkan klaim
+  `UPDATE ... RETURNING` dan panggil dari event berikutnya untuk user yang sama.
 
 ### 2.2 Recap: satu job kalender
 
 ```sql
 select cron.schedule('retpap-recap', '5 17 * * *', $$   -- 00:05 WIB
   select net.http_post(
-    url := 'https://bot.linkviu.my.id/api/cron/notify?kind=recap',
+    url := 'https://bot.linkviu.my.id/api/cron/notify',
     headers := jsonb_build_object('x-cron-secret',
       (select decrypted_secret from vault.decrypted_secrets where name='cron_secret')),
     body := '{}'::jsonb
@@ -225,12 +163,11 @@ jadi job ini aman dijalankan dua kali.
 
 ### 2.3 Endpoint cron
 
-`src/app/api/cron/notify/route.ts`:
+`src/app/api/cron/notify/route.ts` sekarang hanya menjalankan recap:
 
 ```ts
-const kind = new URL(request.url).searchParams.get("kind") ?? "all";
-const notifications = kind === "recap" ? null : await flushNotifications();
-const leaderboard = kind === "flush" ? null : await maybeAnnounceLeaderboards();
+const leaderboard = await maybeAnnounceLeaderboards();
+return Response.json({ leaderboard });
 ```
 
 Secret tetap `x-cron-secret`. `pg_net` mengirim header sebagai JSON object.
@@ -371,7 +308,7 @@ lease_until < now()) order by id limit 1 for update skip locked) returning *;`
 
 | Layanan | Limit | Dampak |
 |---|---|---|
-| Vercel Hobby | 300 dtk/function, 2 GB RAM, bundle 250 MB, cron 2 job 1x/hari | cukup; cron hanya untuk recap |
+| Vercel Hobby | 300 dtk/function, 2 GB RAM, bundle 250 MB, cron maks 1x/hari | cukup; cron hanya untuk recap |
 | Supabase | DB 500 MB, egress 5 GB, pause 7 hari idle, tanpa backup | DB aman; backup harus dibuat sendiri |
 | Supabase Realtime | 200 koneksi, 2 juta pesan/bulan | satu HP = satu koneksi |
 | Cloudflare R2 | 10 GB storage, egress gratis | media tidak jadi masalah |
@@ -388,7 +325,7 @@ lease_until < now()) order by id limit 1 for update skip locked) returning *;`
 
 | Risiko | Tingkat | Mitigasi |
 |---|---|---|
-| Notifikasi ganda karena klaim belum ada | **tinggi** | §2.1(a) dikerjakan sebelum trigger |
+| Notifikasi gagal tidak di-retry | rendah | baris tersimpan dengan `attempts`/`error`; tambahkan retry kalau perlu |
 | Video upload > 60 dtk → Telegram retry | tinggi | `processed_updates` |
 | Egress media membengkak | sedang | R2, bukan Supabase Storage |
 | HP mati saat jadwal upload | sedang | window + catch-up |
@@ -412,7 +349,7 @@ lease_until < now()) order by id limit 1 for update skip locked) returning *;`
 
 ## 9. Urutan kerja yang disarankan
 
-1. §2.1(a) klaim notifikasi — bisa dikerjakan sekarang, tanpa migrasi apa pun.
+1. ~~§2.1(a) klaim notifikasi~~ — selesai: notify sudah per event, tanpa cron.
 2. Fase 1 (DB), diamkan seminggu.
 3. Fase 2 (media) + backfill.
 4. Fase 3 (web) + webhook switch.

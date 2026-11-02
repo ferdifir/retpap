@@ -1,17 +1,19 @@
 import { maybeAnnounceLeaderboards } from "@/lib/bot/leaderboard-announce";
-import { flushNotifications } from "@/lib/bot/notify";
 
-/** Called by the system cron every minute; authenticated with a shared secret. */
+/**
+ * Called by the system cron; authenticated with a shared secret. Uploader
+ * notifications are delivered by the request that created them, so this route
+ * only handles the time-based leaderboard recaps.
+ */
 async function run(request: Request) {
   const expected = process.env.CRON_SECRET ?? process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!expected || request.headers.get("x-cron-secret") !== expected) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const notifications = await flushNotifications();
   const leaderboard = await maybeAnnounceLeaderboards();
 
-  return Response.json({ ...notifications, leaderboard });
+  return Response.json({ leaderboard });
 }
 
 export async function GET(request: Request) {

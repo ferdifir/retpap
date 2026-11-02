@@ -35,17 +35,14 @@ export function anonymousCommentNotificationBody(body: string): string {
   return "💬 <b>Seseorang</b> mengomentari fotomu:\n\n<i>" + escapeHtml(body) + "</i>";
 }
 
-export function digestNotificationBody(counts: {
-  reactions: number;
-  ratings: number;
-  comments: number;
-}): string {
-  const parts: string[] = [];
-  if (counts.reactions > 0) parts.push(counts.reactions + " reaksi baru");
-  if (counts.ratings > 0) parts.push(counts.ratings + " rating baru");
-  if (counts.comments > 0) parts.push(counts.comments + " komentar baru");
+/** Ratings and reactions are anonymous in the feed, so the owner stays too. */
+export function ratingNotificationBody(score: number): string {
+  const shown = Number.isInteger(score) ? String(score) : score.toFixed(1);
+  return "⭐ <b>Seseorang</b> memberi rating " + shown + " ke fotomu.";
+}
 
-  return "📣 Fotomu dapat " + parts.join(", ") + " dalam 15 menit terakhir.";
+export function reactionNotificationBody(emoji: string): string {
+  return escapeHtml(emoji) + " <b>Seseorang</b> bereaksi ke fotomu.";
 }
 
 /** Confirmation for the winner who just claimed the monthly reward. */

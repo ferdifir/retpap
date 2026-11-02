@@ -1,16 +1,14 @@
+import { after } from "next/server";
 import {
-  listDigestCandidates,
-  markDigestSent,
   markNotificationFailed,
   markNotificationSent,
   setNotify,
-  takePendingNotifications,
+  takeNotifications,
 } from "@/db/queries";
 import { shareUrlFor } from "@/lib/share";
 import { BotApiError, sendMessage } from "./api";
-import { digestNotificationBody } from "./format";
 
-export type FlushResult = { sent: number; failed: number; digests: number };
+export type DeliveryResult = { sent: number; failed: number };
 
 function notificationKeyboard(slug: string) {
   return {
@@ -27,14 +25,15 @@ function reasonOf(error: unknown): string {
 }
 
 /**
- * Delivers the outbox and the periodic digests. Safe to call often: every row
- * is marked once, failed rows are retried until they hit the attempt cap, and a
- * blocked bot switches that user's notifications off for good.
+ * Delivers the notifications one action produced. Rows are claimed by id, so a
+ * retried request cannot send the same message twice; a blocked bot switches
+ * that user's notifications off for good.
  */
-export async function flushNotifications(limit = 20): Promise<FlushResult> {
-  const result: FlushResult = { sent: 0, failed: 0, digests: 0 };
-
-  const pending = await takePendingNotifications(limit);
+export async function deliverNotifications(
+  ids: number[],
+): Promise<DeliveryResult> {
+  const result: DeliveryResult = { sent: 0, failed: 0 };
+  const pending = await takeNotifications(ids);
 
   for (const item of pending) {
     try {
@@ -54,23 +53,25 @@ export async function flushNotifications(limit = 20): Promise<FlushResult> {
     }
   }
 
-  for (const candidate of await listDigestCandidates(5)) {
-    try {
-      await sendMessage(
-        candidate.telegramId,
-        digestNotificationBody(candidate),
-        { keyboard: notificationKeyboard(candidate.slug) },
-      );
-      await markDigestSent(candidate.photoId);
-      result.digests += 1;
-    } catch (error) {
-      if (error instanceof BotApiError && error.status === 403) {
-        await setNotify(candidate.userId, false);
-        await markDigestSent(candidate.photoId);
-      }
-      result.failed += 1;
-    }
-  }
-
   return result;
+}
+
+/**
+ * Sends after the response is finished, so the user action never waits on
+ * Telegram. A failed send is recorded on the row (attempts + error) instead of
+ * blocking the action.
+ */
+export function deliverAfterResponse(
+  ids: Array<number | null | undefined>,
+): void {
+  const ready = ids.filter((id): id is number => typeof id === "number");
+  if (ready.length === 0) return;
+
+  after(async () => {
+    try {
+      await deliverNotifications(ready);
+    } catch (error) {
+      console.error("[notify] delivery failed", error);
+    }
+  });
 }
