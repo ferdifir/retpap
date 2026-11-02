@@ -258,9 +258,15 @@ export function PapCard({
   const strokesFor = (entry: FeedDrawingSlide) =>
     entry.mine ? (strokes ?? entry.strokes) : entry.strokes;
 
-  // One slide per drawing, plus the original photo at index 0.
+  // One slide per drawing, plus the original photo at index 0. The 18+ gate
+  // renders no drawing slides at all, so the count has to say one: otherwise
+  // the track can sit on an empty slot with nothing in it.
   const visibleSlides = slides?.filter((entry) => strokesFor(entry).length > 0) ?? null;
-  const slideTotal = visibleSlides ? visibleSlides.length + 1 : item.drawingSlides + 1;
+  const slideTotal = nsfwHidden
+    ? 1
+    : visibleSlides
+      ? visibleSlides.length + 1
+      : item.drawingSlides + 1;
   const mySlide = slides?.find((entry) => entry.mine) ?? null;
 
   // A new photo always opens on its original frame.
@@ -275,8 +281,10 @@ export function PapCard({
   }, [item.id, isActive, nsfwHidden]);
 
   // A `startapp=draw-...` launch opens straight on that drawing's slide.
+  // The 18+ gate renders no slides at all, so the target has to wait for the
+  // reveal: revealing resets the index, and consuming it earlier would lose it.
   useEffect(() => {
-    if (!isActive || !visibleSlides) return;
+    if (!isActive || nsfwHidden || !visibleSlides) return;
 
     const target = consumeDrawingSlideTarget(item.slug);
     if (target === null) return;
@@ -286,7 +294,7 @@ export function PapCard({
 
     slideIndexRef.current = index + 1;
     setSlideIndex(index + 1);
-  }, [isActive, item.slug, visibleSlides]);
+  }, [isActive, item.slug, nsfwHidden, visibleSlides]);
 
   // Clearing the canvas can remove the slide the user is standing on.
   useEffect(() => {
