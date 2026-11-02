@@ -52,6 +52,7 @@ PAINT_TELEGRAM_IDS=123456789,987654321
 ```
 
 - Kosong = hanya owner (`OWNER_TELEGRAM_ID`) yang bisa memakai.
+- `PAINT_TELEGRAM_IDS=*` membuka fitur untuk semua user.
 - Owner selalu ikut, tanpa perlu ditulis di daftar.
 - Diterapkan di dua tempat: `/api/session` (menentukan tab muncul) dan route
   gambar (menolak 403), jadi user di luar daftar tidak bisa menembak API.

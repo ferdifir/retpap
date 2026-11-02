@@ -104,9 +104,10 @@ anonim vs bernama, slide view per foto.
 
 ## Rollout
 
-Flag `DRAW_FEED_SHARE_ENABLED`, dibaca di `/api/session` seperti
-`PAINT_TELEGRAM_IDS`, dan ditegakkan lagi di route share. Selama mati, tombol
-share tidak muncul dan `PATCH` mengembalikan 403.
+Daftar `DRAW_FEED_SHARE_IDS` dibaca di `/api/session` seperti
+`PAINT_TELEGRAM_IDS`, dan ditegakkan lagi di route share. Kosong = hanya owner,
+`*` = semua user. Selama tertutup, tombol share tidak muncul dan `PATCH`
+mengembalikan 403.
 
 ## Urutan kerja
 
