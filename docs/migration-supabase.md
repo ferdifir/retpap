@@ -21,7 +21,7 @@ Pemeriksaan read-only pada 2026-11-03:
 | Status kirim channel | 21 `pending`, 3 `sent`, 149 `idle` |
 | Media di disk | 203 file, sekitar 138 MB; termasuk poster video |
 | Target Supabase | Project `RetPAP`, region `ap-northeast-1` (Tokyo); 25 migrasi Drizzle dan bucket private `retpap-media` sudah diterapkan, belum ada data aplikasi |
-| Target Vercel | Team personal `ferdifirdev-6510`, plan Hobby; project `retpap-supabase-preview` sudah dibuat tanpa domain, tetapi GitHub integration belum terpasang sehingga repo/branch belum dapat dikaitkan atau dideploy |
+| Target Vercel | Team personal `ferdifirdev-6510`, plan Hobby; project `retpap-supabase-preview` sudah dibuat tanpa domain. GitHub namespace `ferdifir` terdeteksi, tetapi pencarian repo `ferdifir/retpap` dari Vercel mengembalikan kosong; belum ada deployment |
 | Build preview | `npm run build` berhasil di lingkungan lokal |
 | Kredensial Preview | URL dan nama bucket sudah diisi; koneksi DB, service role, session, dan kredensial bot belum tersedia |
 | Keamanan Supabase | Advisor menemukan RLS nonaktif pada 17 tabel `public`; jangan buka preview/API sampai kebijakan akses ditetapkan |
@@ -55,9 +55,9 @@ ketentuan pemakaian akun sebelum memilih target produksi.
 
 ### Fase 0 — Verifikasi target dan persiapan
 
-1. Project Vercel terpisah sudah dibuat. Hubungkan GitHub integration, lalu
-   set production branch project ini ke `codex/vercel-supabase-preview`; jangan
-   menautkan domain produksi.
+1. Project Vercel terpisah sudah dibuat. Pastikan instalasi GitHub memberi akses
+   repo `ferdifir/retpap`, lalu kaitkan hanya project ini ke branch
+   `codex/vercel-supabase-preview`; jangan menautkan domain produksi.
 2. Project `RetPAP` di Tokyo sudah berisi skema hasil migrasi, tanpa data
    produksi. Periksa plan, compute, kuota, backup, dan siapkan connection string
    runtime/direct.
