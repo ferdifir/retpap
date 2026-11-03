@@ -1,10 +1,9 @@
-import { readFile } from "node:fs/promises";
 import { claimLeaderboardAnnouncement, getLeaderboard } from "@/db/queries";
 import { leaderboardAnnouncementText } from "@/lib/bot/leaderboard-announce";
 import { BotApiError, deleteMessage, sendMessage } from "@/lib/bot/api";
 import { channelConfigured, channelId } from "@/lib/bot/channel";
 import { postToChannel } from "@/lib/bot/flow";
-import { deleteMedia, mediaPath } from "@/lib/bot/media";
+import { deleteMedia, readMedia } from "@/lib/bot/media";
 import type { InlineKeyboardMarkup } from "@/lib/bot/types";
 import { leaderboardWindow } from "@/lib/leaderboard-period";
 import { leaderboardUrl } from "@/lib/share";
@@ -57,8 +56,7 @@ async function repostToChannel(photoId: number): Promise<ActionResult> {
   if (!snapshot) return { ok: false, reason: "not_found" };
 
   const mediaType = snapshot.mediaType === "video" ? "video" : "photo";
-  const file = mediaPath(snapshot.slug, mediaType === "video" ? "mp4" : "jpg");
-  const bytes = file ? await readFile(file).catch(() => null) : null;
+  const bytes = await readMedia(snapshot.slug, mediaType === "video" ? "mp4" : "jpg");
   if (!bytes) return { ok: false, reason: "missing_file" };
 
   await postToChannel(

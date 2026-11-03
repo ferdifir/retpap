@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import {
   anonymousCommentNotificationBody,
   commentNotificationBody,
@@ -147,9 +147,15 @@ export async function getFeed(userId: number): Promise<FeedPhoto[]> {
   const photoRows = await db
     .select()
     .from(photos)
-    .where(and(eq(photos.isActive, true), genderFilter))
-    // Newest upload first: the deck opens on the most recent photo.
-    .orderBy(desc(photos.id));
+    .where(
+      and(
+        eq(photos.isActive, true),
+        or(isNull(photos.scheduledAt), lte(photos.scheduledAt, new Date())),
+        genderFilter,
+      ),
+    )
+    // Scheduled rows use their release time so a newly visible post opens near the top.
+    .orderBy(desc(sql`coalesce(${photos.scheduledAt}, ${photos.createdAt})`), desc(photos.id));
 
   if (photoRows.length === 0) return [];
 
@@ -272,6 +278,7 @@ export async function getLeaderboard(
     .where(
       and(
         eq(photos.isActive, true),
+        or(isNull(photos.scheduledAt), lte(photos.scheduledAt, now)),
         window.start ? gte(ratings.createdAt, window.start) : undefined,
         window.end ? lt(ratings.createdAt, window.end) : undefined,
       ),
@@ -532,17 +539,90 @@ export async function reactToPhoto(
   });
 }
 
-/**
- * Deactivated content is hidden from the feed and the leaderboard, but the
- * mutation routes take a photo id directly, so they have to ask separately.
- */
+/** Direct-ID routes must hide inactive and not-yet-released content too. */
 export async function isPhotoActive(photoId: number): Promise<boolean> {
   const { db } = getDb();
   const [row] = await db
-    .select({ isActive: photos.isActive })
+    .select({ isActive: photos.isActive, scheduledAt: photos.scheduledAt })
     .from(photos)
     .where(eq(photos.id, photoId));
-  return row?.isActive === true;
+  return row?.isActive === true && (row.scheduledAt === null || row.scheduledAt <= new Date());
+}
+
+/** Future scheduled media must not be fetchable by a guessed immutable slug. */
+export async function isPhotoSlugVisible(slug: string): Promise<boolean> {
+  const { db } = getDb();
+  const [row] = await db
+    .select({ isActive: photos.isActive, scheduledAt: photos.scheduledAt })
+    .from(photos)
+    .where(eq(photos.slug, slug));
+  return row?.isActive === true && (row.scheduledAt === null || row.scheduledAt <= new Date());
+}
+
+export type DueScheduledPhoto = typeof photos.$inferSelect;
+
+/** Claims one due scheduled photo; row locks prevent concurrent request handlers duplicating a send. */
+export async function claimDueScheduledPhoto(
+  staleAfterMs = 15 * 60_000,
+  retryAfterMs = 5 * 60_000,
+): Promise<DueScheduledPhoto | null> {
+  const { db } = getDb();
+  const now = new Date();
+  const staleBefore = new Date(now.getTime() - staleAfterMs);
+  const retryBefore = new Date(now.getTime() - retryAfterMs);
+
+  return db.transaction(async (tx) => {
+    const [candidate] = await tx
+      .select({ id: photos.id })
+      .from(photos)
+      .where(
+        and(
+          eq(photos.isActive, true),
+          isNull(photos.channelMessageId),
+          lte(photos.scheduledAt, now),
+          or(
+            and(
+              eq(photos.channelPostStatus, "pending"),
+              or(isNull(photos.channelPostClaimedAt), lt(photos.channelPostClaimedAt, retryBefore)),
+            ),
+            and(
+              eq(photos.channelPostStatus, "sending"),
+              lt(photos.channelPostClaimedAt, staleBefore),
+            ),
+          ),
+        ),
+      )
+      .orderBy(photos.scheduledAt, photos.id)
+      .limit(1)
+      .for("update", { skipLocked: true });
+
+    if (!candidate) return null;
+
+    const [claimed] = await tx
+      .update(photos)
+      .set({
+        channelPostStatus: "sending",
+        channelPostClaimedAt: now,
+        channelPostAttempts: sql`${photos.channelPostAttempts} + 1`,
+        channelPostError: null,
+      })
+      .where(eq(photos.id, candidate.id))
+      .returning();
+
+    return claimed ?? null;
+  });
+}
+
+export async function retryScheduledChannelPost(photoId: number, error: string): Promise<void> {
+  const { db } = getDb();
+  await db
+    .update(photos)
+    .set({
+      channelPostStatus: "pending",
+      channelPostClaimedAt: new Date(),
+      channelPostError: error.slice(0, 1000),
+    })
+    .where(and(eq(photos.id, photoId), eq(photos.channelPostStatus, "sending")));
 }
 
 export async function ratePhoto(
@@ -1140,7 +1220,12 @@ export async function markChannelPost(
   const { db } = getDb();
   await db
     .update(photos)
-    .set({ channelMessageId: messageId })
+    .set({
+      channelMessageId: messageId,
+      channelPostStatus: "sent",
+      channelPostClaimedAt: null,
+      channelPostError: null,
+    })
     .where(eq(photos.id, photoId));
 }
 

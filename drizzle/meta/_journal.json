@@ -162,6 +162,20 @@
       "when": 1793600256991,
       "tag": "0022_needy_wolfsbane",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793694296841,
+      "tag": "0023_omniscient_patriot",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793694397210,
+      "tag": "0024_smooth_paper_doll",
+      "breakpoints": true
     }
   ]
 }

@@ -83,9 +83,7 @@ step "Syncing source"
 RSYNC_ARGS=(-az --delete --human-readable --info=stats1
   --exclude node_modules --exclude .next --exclude .git
   --exclude '.env.local' --exclude 'tsconfig.tsbuildinfo'
-  --exclude 'Screenshot*.png'
-  # Runtime data lives inside the repo; a --delete sync must not wipe it.
-  --exclude 'inbox' --exclude 'scripts/.upload-state.json')
+  --exclude 'Screenshot*.png')
 
 if [ "$DRY_RUN" = 1 ]; then
   rsync "${RSYNC_ARGS[@]}" --dry-run -e "$RSYNC_SSH" ./ "$SSH_HOST:$REMOTE_DIR/"

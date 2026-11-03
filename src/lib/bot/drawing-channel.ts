@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import {
   getSharedDrawingContext,
   setDrawingChannelMessage,
@@ -8,7 +7,7 @@ import { deleteMessage, sendPhotoFile } from "./api";
 import { channelConfigured, channelId } from "./channel";
 import { renderDrawingTeaser } from "./drawing-image";
 import { DRAWING_CHANNEL_CAPTION } from "./format";
-import { mediaPath } from "./media";
+import { readMedia } from "./media";
 
 /**
  * Posts a shared drawing to the channel. Runs after the response, so a slow
@@ -25,11 +24,8 @@ export async function publishDrawingToChannel(
   if (!context || context.strokes.length === 0) return;
   if (context.channelMessageId) return;
 
-  const file = mediaPath(context.slug, "jpg");
-  if (!file) return;
-
   // Photos use their own jpg; videos use the poster saved under the same slug.
-  const photo = await readFile(file).catch(() => null);
+  const photo = await readMedia(context.slug, "jpg");
   if (!photo) return;
 
   const teaser = await renderDrawingTeaser(photo, context.strokes);

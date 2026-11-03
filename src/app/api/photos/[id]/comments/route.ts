@@ -32,6 +32,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
   const photoId = await photoIdFrom(context);
   if (photoId === null) return Response.json({ error: "bad_photo" }, { status: 400 });
+  if (!(await isPhotoActive(photoId))) {
+    return Response.json({ error: "photo_not_found" }, { status: 404 });
+  }
 
   const spotId = Number(new URL(request.url).searchParams.get("spotId"));
   if (!Number.isInteger(spotId) || spotId <= 0) {
@@ -85,6 +88,9 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
 
   const photoId = await photoIdFrom(context);
   if (photoId === null) return Response.json({ error: "bad_photo" }, { status: 400 });
+  if (!(await isPhotoActive(photoId))) {
+    return Response.json({ error: "photo_not_found" }, { status: 404 });
+  }
 
   const removed = await deleteOwnComment(photoId, userId);
   if (!removed) return Response.json({ error: "not_found" }, { status: 404 });

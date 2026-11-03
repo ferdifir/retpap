@@ -45,7 +45,3 @@ Screenshot*.png
 
 # tesseract language data (downloaded at runtime)
 eng.traineddata
-
-# scheduled upload runtime data
-/inbox
-scripts/.upload-state.json

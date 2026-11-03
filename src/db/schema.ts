@@ -67,7 +67,7 @@ export const uploadSessions = pgTable(
   "upload_sessions",
   {
     telegramId: bigint("telegram_id", { mode: "number" }).primaryKey(),
-    /** "photo" | "caption" | "confirm" */
+    /** "photo" | "caption" | "confirm" | "schedule" */
     step: text("step").notNull(),
     /** "photo" | "video"; both share the same caption/confirm steps. */
     mediaType: text("media_type").notNull().default("photo"),
@@ -92,7 +92,7 @@ export const uploadSessions = pgTable(
   (table) => [
     check(
       "upload_sessions_step_valid",
-      sql`${table.step} in ('photo', 'caption', 'confirm')`,
+      sql`${table.step} in ('photo', 'caption', 'confirm', 'schedule')`,
     ),
     check(
       "upload_sessions_media_type_valid",
@@ -135,6 +135,13 @@ export const photos = pgTable(
     }),
     /** Channel post for this photo, so a manual delete can remove it too. */
     channelMessageId: bigint("channel_message_id", { mode: "number" }),
+    /** Future time when this photo becomes visible and may be posted to channel. */
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+    /** Delivery state for scheduled channel posts. */
+    channelPostStatus: text("channel_post_status").notNull().default("idle"),
+    channelPostClaimedAt: timestamp("channel_post_claimed_at", { withTimezone: true }),
+    channelPostAttempts: integer("channel_post_attempts").notNull().default(0),
+    channelPostError: text("channel_post_error"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -151,10 +158,15 @@ export const photos = pgTable(
       sql`${table.durationSeconds} is null or ${table.durationSeconds} between 1 and 60`,
     ),
     check(
+      "photos_channel_post_status_valid",
+      sql`${table.channelPostStatus} in ('idle', 'pending', 'sending', 'sent')`,
+    ),
+    check(
       "photos_gender_valid",
       sql`${table.gender} is null or ${table.gender} in ('female', 'male')`,
     ),
     index("photos_user_idx").on(table.userId),
+    index("photos_scheduled_post_idx").on(table.scheduledAt, table.channelPostStatus),
   ],
 );
 

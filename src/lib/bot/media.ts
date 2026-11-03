@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 
@@ -42,8 +42,65 @@ export function videoUrl(slug: string): string {
 
 /** Absolute path for one stored file; null when the slug fails validation. */
 export function mediaPath(slug: string, ext: MediaExtension): string | null {
+  if (!SLUG_PATTERN.test(slug) || supabaseStorageConfig()) return null;
+  return path.join(/*turbopackIgnore: true*/ uploadDir(), slug + "." + ext);
+}
+
+type SupabaseStorageConfig = { baseUrl: string; apiKey: string; bucket: string };
+
+function supabaseStorageConfig(): SupabaseStorageConfig | null {
+  const baseUrl = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "") ?? "";
+  const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
+  const bucket = process.env.SUPABASE_STORAGE_BUCKET?.trim() || "retpap-media";
+
+  if (!baseUrl && !apiKey) {
+    if (process.env.VERCEL === "1") {
+      throw new Error("Supabase Storage is required on Vercel");
+    }
+    return null;
+  }
+  if (!baseUrl || !apiKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must both be set");
+
+  return { baseUrl, apiKey, bucket };
+}
+
+function storageObjectUrl(config: SupabaseStorageConfig, slug: string, ext: MediaExtension, authenticated: boolean) {
+  const prefix = authenticated ? "object/authenticated/" : "object/";
+  return `${config.baseUrl}/storage/v1/${prefix}${encodeURIComponent(config.bucket)}/${encodeURIComponent(slug)}.${ext}`;
+}
+
+function storageHeaders(config: SupabaseStorageConfig, extra?: Record<string, string>): HeadersInit {
+  return {
+    apikey: config.apiKey,
+    authorization: `Bearer ${config.apiKey}`,
+    ...extra,
+  };
+}
+
+/** Creates a short-lived URL for the private bucket after the caller checks visibility. */
+export async function signedMediaUrl(slug: string, ext: MediaExtension): Promise<string | null> {
   if (!SLUG_PATTERN.test(slug)) return null;
-  return path.join(uploadDir(), slug + "." + ext);
+  const config = supabaseStorageConfig();
+  if (!config) return null;
+
+  const objectPath = `${encodeURIComponent(slug)}.${ext}`;
+  const response = await fetch(
+    `${config.baseUrl}/storage/v1/object/sign/${encodeURIComponent(config.bucket)}/${objectPath}`,
+    {
+      method: "POST",
+      headers: storageHeaders(config, { "content-type": "application/json" }),
+      body: JSON.stringify({ expiresIn: 3600 }),
+      cache: "no-store",
+    },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Supabase Storage sign failed (${response.status})`);
+
+  const payload = (await response.json()) as { signedURL?: unknown };
+  if (typeof payload.signedURL !== "string" || payload.signedURL.length === 0) {
+    throw new Error("Supabase Storage returned an invalid signed URL");
+  }
+  return new URL(payload.signedURL, config.baseUrl).toString();
 }
 
 /**
@@ -57,6 +114,18 @@ export async function deleteMedia(
 ): Promise<void> {
   const exts: MediaExtension[] = mediaType === "video" ? ["mp4", "jpg"] : ["jpg"];
 
+  const config = supabaseStorageConfig();
+  if (config) {
+    const response = await fetch(`${config.baseUrl}/storage/v1/object/${encodeURIComponent(config.bucket)}`, {
+      method: "DELETE",
+      headers: storageHeaders(config, { "content-type": "application/json" }),
+      body: JSON.stringify({ prefixes: exts.map((ext) => `${slug}.${ext}`) }),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Supabase Storage delete failed (${response.status})`);
+    return;
+  }
+
   for (const ext of exts) {
     const file = mediaPath(slug, ext);
     if (file) await rm(file, { force: true }).catch(() => undefined);
@@ -64,9 +133,44 @@ export async function deleteMedia(
 }
 
 async function writeMedia(slug: string, ext: MediaExtension, bytes: Buffer): Promise<void> {
+  const config = supabaseStorageConfig();
+  if (config) {
+    const response = await fetch(storageObjectUrl(config, slug, ext, false), {
+      method: "POST",
+      headers: storageHeaders(config, {
+        "content-type": ext === "mp4" ? "video/mp4" : "image/jpeg",
+        "x-upsert": "false",
+      }),
+      body: new Uint8Array(bytes),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Supabase Storage upload failed (${response.status})`);
+    return;
+  }
+
   const dir = uploadDir();
   await mkdir(dir, { recursive: true });
-  await writeFile(path.join(dir, slug + "." + ext), bytes, { flag: "wx" });
+  await writeFile(path.join(/*turbopackIgnore: true*/ dir, slug + "." + ext), bytes, { flag: "wx" });
+}
+
+/** Reads one media object from the active durable store. */
+export async function readMedia(slug: string, ext: MediaExtension): Promise<Buffer | null> {
+  if (!SLUG_PATTERN.test(slug)) return null;
+
+  const config = supabaseStorageConfig();
+  if (config) {
+    const response = await fetch(storageObjectUrl(config, slug, ext, true), {
+      headers: storageHeaders(config),
+      cache: "no-store",
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Supabase Storage read failed (${response.status})`);
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  const file = mediaPath(slug, ext);
+  if (!file) return null;
+  return readFile(/*turbopackIgnore: true*/ file).catch(() => null);
 }
 
 function newSlug(): string {

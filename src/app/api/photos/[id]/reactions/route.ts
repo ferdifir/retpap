@@ -50,6 +50,9 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
 
   const photoId = Number((await context.params).id);
   if (!Number.isInteger(photoId)) return Response.json({ error: "bad_photo" }, { status: 400 });
+  if (!(await isPhotoActive(photoId))) {
+    return Response.json({ error: "photo_not_found" }, { status: 404 });
+  }
 
   await clearReaction(photoId, userId);
   return Response.json({ ok: true, spots: await getPhotoSpots(photoId, userId) });

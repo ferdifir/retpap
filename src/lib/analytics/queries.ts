@@ -183,9 +183,9 @@ export async function getUploadFunnel(): Promise<UploadFunnel> {
       count(distinct session_id) filter (where meta->>'step' = 'confirm' and meta->>'question' is null) as step_confirm,
       count(distinct session_id) filter (where meta->>'question' = 'gender') as q_gender,
       count(distinct session_id) filter (where meta->>'question' = 'nsfw') as q_nsfw,
-      count(distinct session_id) filter (where name = 'upload_published') as published
+      count(distinct session_id) filter (where name in ('upload_published', 'upload_scheduled')) as published
     from events
-    where name in ('upload_step', 'upload_published')
+    where name in ('upload_step', 'upload_published', 'upload_scheduled')
       and created_at >= now() - interval '7 days'
   `);
 

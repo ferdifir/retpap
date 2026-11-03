@@ -1,0 +1,1 @@
+CREATE INDEX "photos_scheduled_post_idx" ON "photos" USING btree ("scheduled_at","channel_post_status");

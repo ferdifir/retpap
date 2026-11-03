@@ -2,6 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { handleUpdate } from "@/lib/bot/flow";
 import type { BotUpdate } from "@/lib/bot/types";
 
+export const maxDuration = 60;
+
 /** Compares the webhook secret without leaking its length or content. */
 function secretMatches(header: string | null): boolean {
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();

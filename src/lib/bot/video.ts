@@ -4,11 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { nsfwBadge } from "./nsfw-badge";
+import ffmpegStatic from "ffmpeg-static";
 
-/** ffmpeg is installed on the deploy host; FFMPEG_PATH is an escape hatch. */
+/** Use the bundled binary on serverless; retain the system binary on the VPS. */
 function ffmpegPath(): string {
   const configured = process.env.FFMPEG_PATH?.trim();
-  return configured && configured.length > 0 ? configured : "ffmpeg";
+  if (configured) return configured;
+  if (process.env.VERCEL === "1") {
+    if (!ffmpegStatic) throw new Error("ffmpeg-static has no binary for this Vercel runtime");
+    return ffmpegStatic;
+  }
+  return "ffmpeg";
 }
 
 const POSTER_TIMEOUT_MS = 15_000;
@@ -30,6 +36,7 @@ export async function extractPoster(video: Buffer): Promise<Buffer | null> {
     let child: ReturnType<typeof spawn>;
     try {
       child = spawn(
+        /*turbopackIgnore: true*/
         ffmpegPath(),
         [
           "-hide_banner",
@@ -84,15 +91,17 @@ const TEASER_TIMEOUT_MS = 20_000;
  * Telegram upload, so it never needs a permanent path.
  */
 export async function extractTeaser(
-  videoPath: string,
+  video: Buffer,
   options: { nsfw?: boolean } = {},
 ): Promise<Buffer | null> {
   const dir = await mkdtemp(join(tmpdir(), "retpap-teaser-"));
+  const input = join(dir, "input.mp4");
   const output = join(dir, "teaser.mp4");
   const badgePath = join(dir, "badge.png");
   const hasBadge = options.nsfw === true;
 
   try {
+    await writeFile(input, video);
     // Without the badge the 18+ teaser must not be produced at all, so a
     // failure here propagates and the caller falls back to a spoiler cover.
     if (hasBadge) await writeFile(badgePath, await nsfwBadge(84));
@@ -118,7 +127,7 @@ export async function extractTeaser(
         ":force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,gblur=sigma=" +
         TEASER_BLUR_SIGMA;
 
-      const args = ["-hide_banner", "-loglevel", "error", "-y", "-i", videoPath];
+      const args = ["-hide_banner", "-loglevel", "error", "-y", "-i", input];
       if (hasBadge) args.push("-i", badgePath);
       args.push("-t", String(TEASER_SECONDS));
       if (hasBadge) {
@@ -152,7 +161,7 @@ export async function extractTeaser(
 
       let child: ReturnType<typeof spawn>;
       try {
-        child = spawn(ffmpegPath(), args, { stdio: ["ignore", "ignore", "pipe"] });
+        child = spawn(/*turbopackIgnore: true*/ ffmpegPath(), args, { stdio: ["ignore", "ignore", "pipe"] });
       } catch {
         finish(false);
         return;

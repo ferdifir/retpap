@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "./client";
 import { photos, uploadSessions } from "./schema";
 
-export type UploadStep = "photo" | "caption" | "confirm";
+export type UploadStep = "photo" | "caption" | "confirm" | "schedule";
 export type MediaType = "photo" | "video";
 
 export interface UploadSession {
@@ -99,6 +99,7 @@ export interface NewPhoto {
   isNsfw?: boolean;
   /** null keeps the row unlabelled, so it shows under every feed filter. */
   gender?: ContentGender | null;
+  scheduledAt?: Date | null;
 }
 
 export async function createPhoto(input: NewPhoto): Promise<number> {
@@ -118,6 +119,8 @@ export async function createPhoto(input: NewPhoto): Promise<number> {
       userId: input.userId ?? null,
       isNsfw: input.isNsfw ?? false,
       gender: input.gender ?? null,
+      scheduledAt: input.scheduledAt ?? null,
+      channelPostStatus: input.scheduledAt ? "pending" : "idle",
     })
     .returning({ id: photos.id });
 

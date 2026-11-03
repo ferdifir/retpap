@@ -7,7 +7,10 @@ import { maybeAnnounceLeaderboards } from "@/lib/bot/leaderboard-announce";
  */
 async function run(request: Request) {
   const expected = process.env.CRON_SECRET ?? process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (!expected || request.headers.get("x-cron-secret") !== expected) {
+  const authorization = request.headers.get("authorization");
+  const supplied = request.headers.get("x-cron-secret") ??
+    (authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : null);
+  if (!expected || supplied !== expected) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 

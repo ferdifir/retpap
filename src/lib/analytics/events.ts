@@ -13,6 +13,7 @@ export const EVENT_NAMES = [
   "pref_change",
   "upload_step",
   "upload_published",
+  "upload_scheduled",
   "upload_queued",
   "upload_abandoned",
   "reward_claim",

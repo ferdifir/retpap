@@ -47,7 +47,7 @@ export const HOW_TO_TIPS: readonly HowToTip[] = [
   {
     key: "upload",
     title: "Upload PAP",
-    body: "lewat bot: /upload, kirim foto atau video (maks 1 menit, 20 MB), kirim caption, lalu tekan Upload.",
+    body: "lewat bot: /upload, kirim foto/video, caption, kategori, dan jawaban 18+. Owner bisa memilih tayang sekarang atau mengatur waktu tayang.",
   },
   {
     key: "anon",

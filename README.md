@@ -24,16 +24,23 @@ Tidak ada form upload di dalam Mini App; foto dan video masuk lewat chat bot.
 /howto    → cara pakai aplikasi
 /upload   → bot minta foto atau video
 media     → bot minta caption
-caption   → pertanyaan cewek/cowok → pertanyaan 18+ (Ya / Bukan) → preview + tombol Upload / Batal
+caption   → pertanyaan cewek/cowok → pertanyaan 18+ (Ya / Bukan) → preview
 ```
 
+User biasa menekan **Upload** untuk menerbitkan langsung. Untuk owner, preview menyediakan
+pilihan **Upload sekarang** atau **Atur waktu tayang**. Kirim tanggal dan waktu dalam
+format `YYYY-MM-DD HH:mm` WIB. Foto tersimpan di DB saat dijadwalkan, tetapi feed, leaderboard,
+dan URL media belum mengembalikannya sebelum waktu tersebut. Saat waktunya tiba, RetPAP mencoba
+mengirimnya ke channel setelah request API user berikutnya. Tanpa request, pengiriman menunggu;
+tidak ada cron untuk upload foto. Pengiriman gagal dicoba lagi setelah jeda.
+
 `/batal` kapan saja untuk reset. Media yang dikirim beserta caption dalam satu pesan melewati
-langkah caption. Video dibatasi 30 detik dan 20 MB (batas unduh Bot API); format yang diterima
+langkah caption. Video dibatasi 60 detik dan 20 MB (batas unduh Bot API); format yang diterima
 MP4/WebM.
 
 Sesi disimpan di tabel `upload_sessions` (satu per Telegram user), jadi restart pm2 di tengah
-percakapan tidak menghilangkan media. File baru diunduh dari Telegram saat tombol Terbitkan
-ditekan, disimpan ke `UPLOAD_DIR` (produksi: `/var/lib/retpap/uploads`, sengaja di luar direktori
+percakapan tidak menghilangkan media. File baru diunduh dari Telegram saat user menerbitkan atau
+menjadwalkannya, disimpan ke `UPLOAD_DIR` (produksi: `/var/lib/retpap/uploads`, sengaja di luar direktori
 app supaya `rsync --delete` tidak menghapusnya), lalu disajikan lewat `GET /media/<slug>`.
 Video memakai `ffmpeg` untuk mengambil poster dan mendukung HTTP Range agar bisa di-seek. Untuk
 channel, video dibuatkan teaser 3 detik yang diblur dan tanpa audio, sehingga gerakannya
@@ -46,7 +53,7 @@ Pilihan disimpan di `users.gender_preference` (bukan localStorage), jadi ikut di
 dan bisa diganti lewat pill di header. Feed difilter di SQL: pilihan cewek/cowok menampilkan
 konten dengan gender yang sama **plus** konten yang belum berlabel (`photos.gender is null`),
 supaya upload lama tidak hilang. Konten baru diberi label dari pertanyaan cewek/cowok saat
-upload; upload terjadwal memakai `UPLOAD_GENDER` (default `female`). Leaderboard tidak difilter.
+upload. Leaderboard tidak difilter.
 
 ### Konten 18+
 
@@ -96,7 +103,7 @@ Deep link periode: `startapp=leaderboard_hari`, `leaderboard_minggu`, `leaderboa
 
 ### Recap otomatis ke channel
 
-`/api/cron/notify` (dipanggil setiap menit) juga mengirim recap 3 besar ke channel pada
+`/api/cron/notify` (dipanggil harian pukul 21:05 WIB) juga mengirim recap 3 besar ke channel pada
 **21:00–23:59 WIB**: harian setiap hari, mingguan hari Minggu, bulanan di hari terakhir bulan.
 Periode tanpa cukup penilai di-skip, bukan dikirim kosong. Idempotensi dijaga tabel
 `leaderboard_announcements` dengan `unique (kind, period_start)`; kiriman yang gagal diulang

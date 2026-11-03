@@ -1,8 +1,7 @@
-import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 import type { OverlayOptions } from "sharp";
 import type { LeaderboardEntry, LeaderboardResult } from "@/lib/feed-types";
-import { mediaPath } from "./media";
+import { readMedia } from "./media";
 
 /** Card geometry per rank: centre card is taller so the podium reads at once. */
 const CARD = {
@@ -47,11 +46,9 @@ function cardCaption(entry: LeaderboardEntry): string {
 
 /** One rounded thumbnail, cropped to the card aspect. */
 async function thumbnail(slug: string, width: number, height: number): Promise<Buffer | null> {
-  const file = mediaPath(slug, "jpg");
-  if (!file) return null;
-
   try {
-    const bytes = await readFile(file);
+    const bytes = await readMedia(slug, "jpg");
+    if (!bytes) return null;
     const radius = 18;
 
     const mask = Buffer.from(

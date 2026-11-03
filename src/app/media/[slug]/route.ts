@@ -1,7 +1,5 @@
-import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
-import { Readable } from "node:stream";
-import { MEDIA_EXTENSIONS, mediaPath, type MediaExtension } from "@/lib/bot/media";
+import { MEDIA_EXTENSIONS, readMedia, signedMediaUrl, type MediaExtension } from "@/lib/bot/media";
+import { isPhotoSlugVisible } from "@/db/queries";
 
 const CONTENT_TYPES: Record<MediaExtension, string> = {
   jpg: "image/jpeg",
@@ -49,25 +47,27 @@ function parseRange(header: string, size: number): RangeSpan | "unsatisfiable" |
   return { start, end: Math.min(end, size - 1) };
 }
 
-function streamFrom(file: string, span?: RangeSpan): ReadableStream {
-  return Readable.toWeb(createReadStream(file, span)) as unknown as ReadableStream;
-}
-
 /** Serves uploaded photos and videos. Slugs are immutable, so responses cache forever. */
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug: raw } = await params;
   const parsed = parseMediaParam(raw);
   if (!parsed) return new Response("not found", { status: 404 });
 
-  const file = mediaPath(parsed.slug, parsed.ext);
-  if (!file) return new Response("not found", { status: 404 });
-
-  let size: number;
-  try {
-    size = (await stat(file)).size;
-  } catch {
-    return new Response("not found", { status: 404 });
+  if (!(await isPhotoSlugVisible(parsed.slug))) {
+    return new Response("not found", { status: 404, headers: { "cache-control": "no-store" } });
   }
+
+  const signedUrl = await signedMediaUrl(parsed.slug, parsed.ext);
+  if (signedUrl) {
+    return new Response(null, {
+      status: 307,
+      headers: { location: signedUrl, "cache-control": "no-store" },
+    });
+  }
+
+  const bytes = await readMedia(parsed.slug, parsed.ext);
+  if (!bytes) return new Response("not found", { status: 404 });
+  const size = bytes.byteLength;
 
   const headers = {
     "content-type": CONTENT_TYPES[parsed.ext],
@@ -86,12 +86,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   }
 
   if (!span) {
-    return new Response(streamFrom(file), {
+    return new Response(new Uint8Array(bytes), {
       headers: { ...headers, "content-length": String(size) },
     });
   }
 
-  return new Response(streamFrom(file, span), {
+  return new Response(new Uint8Array(bytes.subarray(span.start, span.end + 1)), {
     status: 206,
     headers: {
       ...headers,
@@ -107,20 +107,26 @@ export async function HEAD(_request: Request, { params }: { params: Promise<{ sl
   const parsed = parseMediaParam(raw);
   if (!parsed) return new Response(null, { status: 404 });
 
-  const file = mediaPath(parsed.slug, parsed.ext);
-  if (!file) return new Response(null, { status: 404 });
-
-  try {
-    const size = (await stat(file)).size;
-    return new Response(null, {
-      headers: {
-        "content-type": CONTENT_TYPES[parsed.ext],
-        "accept-ranges": "bytes",
-        "cache-control": "public, max-age=31536000, immutable",
-        "content-length": String(size),
-      },
-    });
-  } catch {
-    return new Response(null, { status: 404 });
+  if (!(await isPhotoSlugVisible(parsed.slug))) {
+    return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
   }
+
+  const signedUrl = await signedMediaUrl(parsed.slug, parsed.ext);
+  if (signedUrl) {
+    return new Response(null, {
+      status: 307,
+      headers: { location: signedUrl, "cache-control": "no-store" },
+    });
+  }
+
+  const bytes = await readMedia(parsed.slug, parsed.ext);
+  if (!bytes) return new Response(null, { status: 404 });
+  return new Response(null, {
+    headers: {
+      "content-type": CONTENT_TYPES[parsed.ext],
+      "accept-ranges": "bytes",
+      "cache-control": "public, max-age=31536000, immutable",
+      "content-length": String(bytes.byteLength),
+    },
+  });
 }

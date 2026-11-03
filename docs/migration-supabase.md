@@ -1,358 +1,212 @@
-# Plan: Migrasi ke Supabase + Vercel + R2 + worker Android
+# Rencana migrasi RetPAP ke Vercel + Supabase
 
-Status: **rancangan** (belum ada kode, env, atau data yang diubah)
+Status: **rencana**. Belum ada data, environment, DNS, webhook, atau layanan
+produksi yang diubah untuk migrasi ini.
 
-Dokumen ini menggantikan asumsi "pindah semua ke serverless". Pekerjaan yang
-butuh filesystem atau binary besar tetap punya rumah sendiri, dan cron yang
-sekarang berjalan tiap menit dipecah jadi reaktif + scheduler kalender.
+Dokumen ini menggantikan rancangan migrasi sebelumnya. Rencana mengikuti alur
+aplikasi yang sekarang: upload melalui bot, jadwal posting owner disimpan di
+DB, dan pengiriman post terjadwal dipicu request aplikasi berikutnya. Tidak
+ada cron untuk upload terjadwal.
 
-## 0. Keputusan arsitektur
+## 1. Kondisi saat ini
 
-| Komponen | Rumah baru | Pemicu | Alasan |
-|---|---|---|---|
-| Web, API, webhook | Vercel Hobby | request | Next 16 + `cacheComponents` paling aman di Vercel |
-| Database | Supabase free (500 MB) | — | Postgres 16, sama dengan sekarang |
-| Media (jpg/mp4) | Cloudflare R2 | — | egress gratis; Supabase free cuma 5 GB/bulan |
-| Notify | request yang membuatnya | `after()` setelah response | kejadian, bukan jadwal |
-| Recap leaderboard | Vercel route | `pg_cron` 1x/hari | kejadian kalender |
-| Scheduled upload | Android (Termux) | antrean + window catch-up | sumber foto memang di HP |
-| Transcode video | Vercel (`ffmpeg-static`) | webhook | user menunggu, tidak boleh bergantung pada HP |
+Pemeriksaan read-only pada 2026-11-03:
 
-Aturan yang mengikat semua keputusan di bawah:
-
-1. **Reaktif hanya untuk kejadian.** Yang berbasis jam tetap scheduler.
-2. **HP tidak pernah dipanggil.** Semua kerja HP lewat antrean (pull).
-3. **Setiap pekerjaan punya lease + attempts.** Tanpa itu, dua pekerja bisa
-   mengerjakan baris yang sama.
-
-```
-Telegram ──webhook──> Vercel (Next)
-                         │  ├─ Postgres (Supabase, pooler 6543)
-                         │  ├─ R2 (media)
-                         │  └─ Bot API (channel, notif)
-                         │
-Supabase trigger ──pg_net──> /api/cron/notify?kind=flush
-Supabase pg_cron ──pg_net──> /api/cron/notify   (00:05 WIB, recap saja)
-Android (Termux) ──poll/realtime──> tabel upload_jobs ──> R2 + Postgres + Bot API
-```
-
-## 1. Fase migrasi
-
-Setiap fase bisa dibalik tanpa kehilangan data. Jangan gabungkan dua fase dalam
-satu langkah.
-
-### Fase 1 — Database ke Supabase
-
-1. Buat project Supabase (region Singapore, paling dekat).
-2. `pg_dump` dari VPS → restore ke Supabase (port **5432**, direct).
-3. Ganti `DATABASE_URL` ke pooler **port 6543** (transaction mode) + `?sslmode=require`.
-4. Ubah `src/db/client.ts`:
-
-```ts
-const pool = new Pool({
-  connectionString,
-  max: 1,                       // satu koneksi per instance function
-  idleTimeoutMillis: 10_000,
-  connectionTimeoutMillis: 10_000,
-});
-```
-
-5. `drizzle.config.ts` tetap memakai koneksi **direct** (5432) untuk
-   `db:migrate`; pooler transaction mode tidak mendukung DDL multi-statement.
-6. Jalankan `npm run db:migrate` dari lokal untuk memastikan migrasi bisa
-   diterapkan ke Supabase.
-
-**Rollback**: kembalikan `DATABASE_URL` ke VPS. Skema identik, tidak ada
-perubahan data.
-
-**Catatan penting**
-
-- Free plan **pause setelah 7 hari tanpa aktivitas**. Cron recap harian sudah
-  cukup untuk mencegahnya, tapi jangan mengandalkan ini untuk staging.
-- Free plan **tidak punya backup**. Ganti `pg_dump` yang sekarang ada di
-  `scripts/deploy.sh` dengan GitHub Actions mingguan → R2.
-- `events` akan terus tumbuh; siapkan retensi 90 hari sebelum menembus 500 MB.
-
-### Fase 2 — Media ke R2
-
-1. Buat bucket `retpap-media`, sambungkan custom domain
-   (`media.bot.linkviu.my.id`) lewat Cloudflare.
-2. Salin 46 file dari `UPLOAD_DIR` ke bucket dengan key `<slug>.<ext>`.
-3. Backfill URL di DB (lihat §2.4).
-4. Ubah `src/lib/bot/media.ts`:
-   - `writeMedia` → `PutObjectCommand`
-   - `deleteMedia` → `DeleteObjectCommand`
-   - `mediaUrl`/`videoUrl` → URL absolut R2
-   - `mediaPath` tetap ada selama transisi, lalu dihapus
-5. `src/app/media/[slug]/route.ts` → **308 redirect** ke R2 selama 30 hari,
-   lalu dihapus. Link lama di chat/Channel masih hidup.
-6. `src/lib/bot/flow.ts:293` (repost admin) membaca file dari disk →
-   ganti jadi `fetch` ke R2.
-7. `next.config.ts` → tambah `remotePatterns` untuk domain media.
-
-**Rollback**: `mediaUrl` dikembalikan ke `/media/...`; file masih ada di VPS
-sampai fase 6.
-
-**Jangan** pakai Supabase Storage untuk media: egress 5 GB/bulan habis oleh
-~1.600 penayangan video 3 MB.
-
-### Fase 3 — Web ke Vercel
-
-1. Import repo, set env (lihat §6), region `sin1`.
-2. `ffmpeg-static` untuk video (lihat §2.5).
-3. Deploy, uji dengan domain preview sebelum menyentuh DNS.
-4. `npm run bot:setup` → `setWebhook` ke domain Vercel.
-5. Pindahkan DNS (Cloudflare sudah mem-proxy, jadi cukup ubah origin).
-
-**Rollback**: `setWebhook` balik ke VPS + DNS balik. Webhook adalah satu-satunya
-titik switch, jadi rollback-nya hitungan detik.
-
-### Fase 4 — Notify reaktif + recap terjadwal
-
-Lihat §2.1–§2.3. Setelah ini cron VPS `retpap-notify.sh` dimatikan.
-
-**Rollback**: hapus trigger + job `pg_cron`, hidupkan lagi cron 1 menit.
-
-### Fase 5 — Scheduled upload ke Android
-
-Lihat §3. Setelah worker HP terbukti jalan 3 hari berturut-turut, cron VPS
-`scheduled-upload.ts` dimatikan.
-
-**Rollback**: cron VPS masih terpasang (nonaktif), tinggal di-enable.
-
-### Fase 6 — Matikan retpap di VPS
-
-Hapus cron, pm2, nginx site, dan `UPLOAD_DIR` **setelah** Fase 2–5 stabil
-minimal seminggu. Simpan `pg_dump` terakhir di luar server.
-
-## 2. Perubahan kode
-
-### 2.1 Notify: per event, bukan sweep
-
-Status: **sudah diimplementasikan** (2026-11-02). Ini yang menggantikan cron
-satu menit, jadi tidak ada trigger `pg_net` dan tidak ada klaim baris.
-
-- `addComment`, `ratePhoto`, `reactToPhoto` menulis baris `notifications` di
-  transaksi yang sama dengan aksinya, hanya kalau pemilik foto mengaktifkan
-  notifikasi dan bukan pelakunya sendiri.
-- Route memanggil `deliverAfterResponse([...])`; `after()` mengirim pesan
-  Telegram setelah response selesai, jadi user tidak menunggu bot API.
-- Digest 15 menit dihapus. Rating dan reaksi sekarang memicu notifikasi
-  sendiri-sendiri, dan isinya anonim ("Seseorang") karena rating/reaksi memang
-  tidak menampilkan identitas di feed.
-- `/api/cron/notify` tinggal recap leaderboard. Di Vercel cukup cron harian.
-- Baris yang gagal terkirim tetap tersimpan dengan `attempts` + `error`, tapi
-  **tidak di-retry otomatis**. Kalau nanti butuh retry, tambahkan klaim
-  `UPDATE ... RETURNING` dan panggil dari event berikutnya untuk user yang sama.
-
-### 2.2 Recap: satu job kalender
-
-```sql
-select cron.schedule('retpap-recap', '5 17 * * *', $$   -- 00:05 WIB
-  select net.http_post(
-    url := 'https://bot.linkviu.my.id/api/cron/notify',
-    headers := jsonb_build_object('x-cron-secret',
-      (select decrypted_secret from vault.decrypted_secrets where name='cron_secret')),
-    body := '{}'::jsonb
-  );
-$$);
-```
-
-Idempotensi sudah ada di `leaderboard_announcements` (unique per kind+period),
-jadi job ini aman dijalankan dua kali.
-
-### 2.3 Endpoint cron
-
-`src/app/api/cron/notify/route.ts` sekarang hanya menjalankan recap:
-
-```ts
-const leaderboard = await maybeAnnounceLeaderboards();
-return Response.json({ leaderboard });
-```
-
-Secret tetap `x-cron-secret`. `pg_net` mengirim header sebagai JSON object.
-
-### 2.4 Media
-
-```ts
-// src/lib/bot/media.ts
-export function mediaUrl(slug: string): string {
-  return MEDIA_PUBLIC_URL + "/" + slug + ".jpg";
-}
-```
-
-Backfill DB:
-
-```sql
-update photos
-set image_url = replace(image_url, '/media/', 'https://media.bot.linkviu.my.id/'),
-    poster_url = replace(poster_url, '/media/', 'https://media.bot.linkviu.my.id/')
-where image_url like '/media/%';
-```
-
-### 2.5 Video
-
-- `package.json`: `ffmpeg-static` (dependency, bukan dev).
-- `src/lib/bot/video.ts`: `ffmpegPath()` → `process.env.FFMPEG_PATH ?? ffmpegStatic`.
-- `maxDuration = 300` di route webhook (Hobby sudah 300 detik).
-- Temp file tetap di `os.tmpdir()`; instance tidak dipakai ulang, jadi tidak ada
-  kebocoran antar-request.
-
-**Risiko**: cold start + bundle 80 MB. Kalau terasa lambat, pindahkan transcode
-ke job queue (lihat §3.4) — bukan ke HP.
-
-### 2.6 Webhook
-
-`handleUpdate` dipanggil inline. Dengan 300 detik ini cukup, **tapi** Telegram
-menganggap webhook gagal bila tidak ada respons dalam ~60 detik dan akan
-mengirim ulang update yang sama. Video 60 detik + ffmpeg + upload channel bisa
-melewatinya.
-
-Mitigasi minimal: tabel `processed_updates(update_id bigint primary key)`,
-di-insert di awal handler; duplikat langsung di-ack tanpa diproses.
-
-```sql
-create table processed_updates (
-  update_id bigint primary key,
-  created_at timestamptz not null default now()
-);
-```
-
-## 3. Worker Android
-
-### 3.1 Batasan yang membentuk desain
-
-- HP tidak punya IP publik → **tidak bisa** dipanggil webhook.
-- Doze mode membekukan proses saat layar mati.
-- Jaringan seluler putus-nyambung.
-- Token bot ada di perangkat yang bisa hilang.
-
-Karena itu: **window + catch-up**, bukan jadwal tepat.
-
-### 3.2 Kontrak kerja
-
-```
-Setiap 5 menit (atau saat Realtime memberi sinyal):
-  jika jam WIB di luar 07:00–23:00      → tidur
-  jika kuota hari ini >= MAX_PER_DAY    → tidur
-  jika jarak dari upload terakhir < MIN_GAP → tidur
-  ambil 1 file dari folder inbox HP
-  proses (sharp/ffmpeg) → upload R2 → insert photos → kirim channel
-  catat di state lokal
-```
-
-Kuota harian dihitung dari DB, bukan dari state lokal:
-
-```sql
-select count(*) from photos
-where user_id = $worker_user
-  and created_at >= date_trunc('day', now() at time zone 'Asia/Jakarta') at time zone 'Asia/Jakarta';
-```
-
-State file `.upload-state.json` **tetap di HP** — isinya daftar file yang sudah
-dipakai, dan file itu memang hanya ada di HP. Tidak perlu tabel baru.
-
-### 3.3 Termux
-
-```bash
-pkg install nodejs ffmpeg
-termux-wake-lock
-# matikan optimasi baterai untuk Termux di setelan Android
-```
-
-Jalankan dengan `termux-services` atau `tmux` supaya hidup lagi setelah reboot.
-
-### 3.4 Kalau nanti butuh antrean
-
-Tabel `jobs` hanya perlu kalau ada pekerjaan yang **dipicu user** dan harus
-dikerjakan HP (mis. transcode). Untuk scheduled upload murni, tidak perlu —
-worker cukup memeriksa kuota.
-
-```sql
-create table jobs (
-  id bigint generated by default as identity primary key,
-  kind text not null check (kind in ('transcode','repost')),
-  payload jsonb not null default '{}',
-  status text not null default 'queued' check (status in ('queued','running','done','failed')),
-  attempts int not null default 0,
-  lease_until timestamptz,
-  created_at timestamptz not null default now()
-);
-```
-
-Klaim: `update ... set status='running', lease_until=now()+interval '10 minutes'
-where id = (select id from jobs where status='queued' or (status='running' and
-lease_until < now()) order by id limit 1 for update skip locked) returning *;`
-
-### 3.5 Keamanan
-
-| Risiko | Mitigasi |
+| Bagian | Kondisi |
 |---|---|
-| HP hilang → token bot bocor | Buat bot kedua khusus worker, atau siapkan prosedur `revoke` via BotFather |
-| HP punya akses DB penuh | Buat role `retpap_worker` dengan grant hanya `insert photos`, `select users/photos`; jangan pakai kredensial app |
-| Kredensial di file | Simpan di `~/.retpap.env` dengan `chmod 600` |
+| Aplikasi | Next.js 16 di VPS, dijalankan PM2 |
+| Database produksi | PostgreSQL di VPS, sekitar 18 MB |
+| Isi `photos` | 173 baris: 145 foto dan 28 video |
+| Status kirim channel | 21 `pending`, 3 `sent`, 149 `idle` |
+| Media di disk | 203 file, sekitar 138 MB; termasuk poster video |
+| Target Supabase | Project `RetPAP`, region `ap-northeast-1` (Tokyo), aktif, belum ada tabel `public` |
+| Target Vercel | Akses MCP terkonfirmasi pada akun plan Hobby dan team personal `ferdifirdev-6510`; team tidak memiliki project aktif yang dapat diakses. Ada tiga catatan deployment lama bernama `linkviu-web`, tetapi project detail-nya 404. Daftar domain Vercel kosong |
 
-## 4. Environment
+Angka VPS adalah baseline untuk rekonsiliasi, bukan hasil migrasi. Sebelum
+cutover, hitung ulang dan cocokkan setiap file ke slug/jenis media di DB.
 
-| Variabel | Status | Catatan |
+## 2. Arsitektur target
+
+| Komponen | Target | Catatan |
 |---|---|---|
-| `DATABASE_URL` | diubah | pooler 6543 + `sslmode=require` |
-| `MEDIA_PUBLIC_URL` | **baru** | `https://media.bot.linkviu.my.id` |
-| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | **baru** | |
-| `FFMPEG_PATH` | baru (opsional) | default ke `ffmpeg-static` |
-| `CRON_SECRET` | diubah | disimpan juga di Supabase Vault |
-| `APP_URL`, `SESSION_SECRET`, `TELEGRAM_*`, `OWNER_TELEGRAM_ID` | tetap | |
-| `UPLOAD_DIR` | dihapus | tidak ada disk lokal |
+| Next.js, API, Mini App, Telegram webhook | Vercel Node.js Functions | Gunakan region yang dekat dengan database; target awal `hnd1` (Tokyo) karena project Supabase berada di Tokyo, lalu ukur latency dari pengguna Indonesia |
+| PostgreSQL | Project Supabase `RetPAP` yang sudah tersedia | Pertahankan skema dan ID yang sekarang; koneksi runtime lewat Supavisor transaction pooler |
+| Foto/video dan poster | Supabase Storage, bucket **private** | Baseline 138 MB cocok untuk migrasi awal; private supaya URL object tidak melewati pemeriksaan jadwal dan 18+ |
+| Bot Telegram | Bot yang sama | Webhook dipindah satu kali saat cutover; jangan aktifkan dua consumer untuk bot yang sama |
+| Recap leaderboard | `/api/cron/notify` | Satu jadwal harian saja; cron bukan pemicu scheduled upload |
+| Scheduled channel post | `photos.scheduled_at` + status/claim di DB | Diproses paling banyak satu post saat request API terautentikasi berikutnya; tidak menambah cron upload |
 
-## 5. Batas free tier
+**Batas media:** paket Supabase Free saat ini mencakup 1 GB Storage dan batas
+50 MB per file; upload aplikasi dibatasi 20 MB. Egress Storage memakai kuota
+cached dan uncached terpisah. Pantau pemakaian setelah cutover; pindahkan bucket
+ke R2 bila trafik melampaui kuota atau biaya Supabase Storage menjadi tidak
+sesuai. Bucket tetap private pada kedua pilihan.
 
-| Layanan | Limit | Dampak |
-|---|---|---|
-| Vercel Hobby | 300 dtk/function, 2 GB RAM, bundle 250 MB, cron maks 1x/hari | cukup; cron hanya untuk recap |
-| Supabase | DB 500 MB, egress 5 GB, pause 7 hari idle, tanpa backup | DB aman; backup harus dibuat sendiri |
-| Supabase Realtime | 200 koneksi, 2 juta pesan/bulan | satu HP = satu koneksi |
-| Cloudflare R2 | 10 GB storage, egress gratis | media tidak jadi masalah |
+**Batas serverless:** Vercel Functions berjalan terbatas waktu dan batas cron
+Hobby hanya sekali sehari. Karena scheduled upload memang tidak memakai cron,
+Hobby masih dapat menjalankan recap harian; verifikasi plan, penggunaan, dan
+ketentuan pemakaian akun sebelum memilih target produksi.
 
-## 6. Yang hilang dari setup sekarang
+## 3. Fase migrasi
 
-- `npm run deploy` (rsync + dump + migrate + build + restart) → diganti
-  `git push` + migrasi manual.
-- Backup otomatis tiap deploy → harus dibuat sendiri (GitHub Actions mingguan).
-- Nginx + pm2 sebagai pengaman → tidak ada fallback kalau Vercel down.
-- Kontrol penuh atas waktu eksekusi → function bisa cold start.
+### Fase 0 — Verifikasi target dan persiapan
 
-## 7. Risiko
+1. Periksa project Vercel yang akan dipakai: Git repository/branch, plan, domain,
+   region Functions, Fluid Compute, dan environment Preview/Production.
+2. Periksa plan Supabase, compute, kuota, backup, dan connection string project
+   `RetPAP`. Project ini masih kosong sehingga tidak ada tabel target yang perlu
+   dipertahankan.
+3. Pastikan DNS dan kepemilikan `bot.linkviu.my.id`; catat konfigurasi webhook
+   Telegram sekarang tanpa mengubahnya.
+4. Buat manifest sumber: daftar semua slug, ekstensi, ukuran, checksum, dan
+   relasi foto/video/poster. Jangan mengandalkan jumlah file saja.
+5. Simpan dump PostgreSQL terenkripsi di luar VPS dan salinan media terverifikasi
+   sebelum migrasi.
 
-| Risiko | Tingkat | Mitigasi |
-|---|---|---|
-| Notifikasi gagal tidak di-retry | rendah | baris tersimpan dengan `attempts`/`error`; tambahkan retry kalau perlu |
-| Video upload > 60 dtk → Telegram retry | tinggi | `processed_updates` |
-| Egress media membengkak | sedang | R2, bukan Supabase Storage |
-| HP mati saat jadwal upload | sedang | window + catch-up |
-| Token bot di HP | sedang | role terbatas + prosedur revoke |
-| Free plan pause | rendah | recap harian menjaga aktivitas |
+**Gerbang lanjut:** biaya/plan diketahui, akses Vercel terverifikasi, backup bisa
+dibaca, dan semua file DB punya file sumber yang cocok.
 
-## 8. Checklist uji
+### Fase 1 — Siapkan Supabase Database
 
-- [ ] Upload foto dari bot → media ada di R2, URL di DB absolut.
-- [ ] Upload video → poster + teaser jadi, channel terkirim < 60 dtk.
-- [ ] Rating/komentar/reaksi → notifikasi terkirim < 2 dtk (bukan menunggu 60 dtk).
-- [ ] Matikan endpoint notif → baris gagal, `attempts` naik, sweep 5 menit mengirim ulang.
-- [ ] Dua invoker bersamaan → tidak ada notifikasi ganda.
-- [ ] Recap 00:05 WIB → terkirim sekali, baris `leaderboard_announcements` bertambah.
-- [ ] Link `/media/<slug>.jpg` lama → 308 ke R2.
-- [ ] Video playback di Mini App → range request jalan dari R2.
-- [ ] `/admin` hapus konten → file di R2 ikut terhapus.
-- [ ] HP tidur 8 jam → bangun, kuota hari ini terisi sesuai window.
-- [ ] HP mati 2 hari → saat hidup, tidak membanjiri channel (MAX_PER_DAY tetap).
-- [ ] `pg_dump` mingguan berhasil ke R2 dan bisa di-restore.
+1. Terapkan migrasi Drizzle yang ada ke project Supabase kosong.
+2. Ubah koneksi migrasi agar memakai koneksi direct Supabase. Jangan menjalankan
+   DDL melalui transaction pooler.
+3. Uji koneksi runtime melalui Supavisor transaction pooler. Turunkan pool
+   per-instance di `src/db/client.ts` dari 10 menjadi 1 terlebih dahulu; naikkan
+   hanya jika pengukuran menunjukkan antrean koneksi. Pastikan tidak ada fitur
+   yang bergantung pada session state atau prepared statement bernama.
+4. Impor data dari dump PostgreSQL VPS ke skema hasil migrasi. Pertahankan
+   urutan ID, sequence, foreign key, timestamp, riwayat rating, sesi upload,
+   status channel, `scheduled_at`, dan `channel_message_id`.
+5. Cocokkan jumlah baris per tabel, sequence ID, foto aktif, status antrean,
+   ranking, dan sampel relasi `spots`/`comments`/`reactions`.
 
-## 9. Urutan kerja yang disarankan
+**Rollback:** sebelum cutover, aplikasi tetap memakai database VPS. Jika validasi
+gagal, kosongkan target yang masih non-produksi dan ulangi restore.
 
-1. ~~§2.1(a) klaim notifikasi~~ — selesai: notify sudah per event, tanpa cron.
-2. Fase 1 (DB), diamkan seminggu.
-3. Fase 2 (media) + backfill.
-4. Fase 3 (web) + webhook switch.
-5. Fase 4 (reaktif + recap).
-6. Fase 5 (worker HP).
-7. Fase 6 (matikan VPS).
+### Fase 2 — Pindahkan media dan hilangkan ketergantungan disk lokal
+
+1. Buat bucket private `retpap-media` dengan pembatasan tipe dan ukuran sesuai
+   batas aplikasi.
+2. Salin semua object dengan key deterministik `<slug>.jpg` atau `<slug>.mp4`;
+   poster video disimpan sebagai `<slug>.jpg`. Simpan manifest sumber dan hasil.
+3. Verifikasi jumlah, ukuran total, checksum unduh, semua path yang dirujuk DB,
+   dan tidak adanya object yatim. Jangan hapus `/var/lib/retpap/uploads`.
+4. Tambahkan adapter media berbasis object storage. Ganti pemakaian filesystem
+   produksi pada `media.ts`, route `/media/[slug]`, repost admin, scheduled
+   channel post, gambar drawing/channel, dan admin actions.
+5. Pertahankan `/media/<slug>` sebagai pemeriksaan akses server-side: cek bahwa
+   foto sudah melewati `scheduled_at`, lalu stream object beserta dukungan HTTP
+   Range untuk video. Jangan mengembalikan URL permanen bucket private ke
+   browser.
+6. Gunakan `/tmp` hanya untuk file sementara `ffmpeg`/`ffprobe`; hapus file
+   sementara pada jalur sukses maupun gagal.
+
+**Rollback:** object dan file VPS dibiarkan hidup berdampingan. Sebelum cutover,
+adapter VPS dan Vercel harus bisa membaca object yang sama agar rollback host
+tidak kehilangan akses media.
+
+### Fase 3 — Siapkan kompatibilitas Vercel
+
+1. Set environment Preview terpisah dari Production. Server-only: `DATABASE_URL`,
+   URL/key Supabase Storage, token Telegram, secret webhook, secret sesi, ID
+   owner/channel, URL aplikasi, dan secret recap. Jangan memasukkan service-role
+   key ke `NEXT_PUBLIC_*` atau menyimpan secret dalam repo.
+2. Set runtime database ke Node.js Functions dan region dekat Supabase. Uji
+   koneksi dari function, termasuk jumlah koneksi saat request paralel.
+3. Uji bundling `sharp`, `ffmpeg`, dan `ffprobe` di Vercel. Kode sekarang
+   memanggil binary sistem `ffmpeg`/`ffprobe`; VPS menyediakannya, Vercel tidak.
+   Pilih binary yang bisa dibundel untuk runtime/arsitektur target atau pindahkan
+   proses video ke worker terpisah sebelum cutover. Jangan menganggap build sukses
+   berarti binary berhasil berjalan.
+4. Periksa jalur webhook yang sekarang memproses update secara inline. Tambahkan
+   idempotensi `update_id` dan pastikan pekerjaan berat tidak membuat Telegram
+   mengirim update berulang atau pekerjaan terputus saat Function berakhir.
+5. Ganti pemicu `void processDueScheduledPost()` dengan mekanisme pasca-response
+   yang didukung Next/Vercel, tetap memakai klaim DB dan retry yang ada. Satu
+   request hanya mengklaim satu item. Jika function mati, item harus tetap bisa
+   dicoba pada request berikutnya.
+6. Pertahankan status/rule media terjadwal: row dan object tersimpan saat owner
+   menjadwalkan, tetapi belum masuk feed/leaderboard atau bisa dibuka melalui
+   route media sebelum waktunya. Pengguna biasa tetap tidak mendapat opsi jadwal.
+7. Tinjau `setTimeout` flush analytics di client untuk kehilangan event saat
+   function/browser ditutup; ini bukan blocker cutover jika tidak mengubah
+   akurasi metrik yang dianggap penting.
+
+**Gerbang lanjut:** preview lolos alur upload foto/video, crop/poster, scheduled
+owner, pembatasan waktu media, interaksi feed, repost admin, dan pengiriman
+channel menggunakan object storage.
+
+### Fase 4 — Cron recap saja
+
+1. Tambahkan satu cron harian untuk `/api/cron/notify`; jadwal Vercel ditulis
+   dalam UTC. `21:05 WIB` = `14:05 UTC`.
+2. Pertahankan validasi `CRON_SECRET` dan idempotensi `leaderboard_announcements`.
+3. Uji dengan dry-run pada preview; pastikan cron hanya menjalankan recap.
+4. Jangan menambahkan cron atau polling berkala untuk `photos.scheduled_at`.
+
+**Rollback:** aktifkan kembali cron recap VPS jika fungsi Vercel gagal. Upload
+terjadwal tetap mengikuti pemicu request aplikasi.
+
+### Fase 5 — Cutover produksi
+
+1. Deploy Production Vercel dengan domain sementara, Supabase, dan bucket yang
+   sudah tervalidasi. Jalankan smoke test tanpa mengubah webhook bot utama.
+2. Masuk jendela cutover: hentikan sementara upload/perubahan di VPS, buat dump
+   final DB dan manifest media final, salin delta, lalu verifikasi ulang.
+3. Arahkan konfigurasi Vercel Production ke database dan media final. Pastikan
+   user API/feed bekerja dan data queue cocok sebelum mengalihkan trafik.
+4. Ubah Telegram webhook ke URL Vercel satu kali dan validasi update bot.
+5. Alihkan domain ke Vercel. Pertahankan VPS hidup dan jangan hapus upload,
+   database, cron, atau konfigurasi lama selama masa observasi.
+6. Verifikasi end-to-end: login Mini App, feed, media Range video, komentar,
+   rating, owner schedule, scheduled post yang sudah jatuh tempo, `message_id`,
+   notifikasi, admin, recap harian, log error, DB connections, Storage egress.
+
+### Fase 6 — Masa observasi dan pensiun VPS
+
+1. Observasi minimal 7 hari, termasuk satu recap harian dan semua status post
+   terjadwal yang jatuh tempo.
+2. Ambil dump DB dan snapshot manifest media setelah stabil.
+3. Pensiunkan cron recap VPS setelah cron Vercel terbukti. Pastikan tidak ada
+   cron `scheduled-upload.ts` (alur itu sudah dihapus).
+4. Setelah rollback tidak lagi diperlukan, hentikan PM2/Nginx dan baru hapus
+   database/file VPS melalui aksi produksi yang disetujui terpisah.
+
+## 4. Environment yang perlu dipetakan
+
+| Variabel | Tujuan |
+|---|---|
+| `DATABASE_URL` | Supabase transaction pooler untuk runtime |
+| Koneksi direct Supabase | Hanya untuk Drizzle migration/maintenance; simpan sebagai env terpisah bila perlu |
+| `SUPABASE_URL` + service credential | Akses Storage dari server saja |
+| `APP_URL` | URL Production Vercel dan callback/link bot |
+| `TELEGRAM_BOT_TOKEN` | Kirim pesan/media lewat Bot API |
+| `TELEGRAM_WEBHOOK_SECRET` | Validasi webhook Telegram |
+| `TELEGRAM_CHANNEL_ID`, `TELEGRAM_CHANNEL_URL` | Tujuan post dan link channel |
+| `OWNER_TELEGRAM_ID` | Hak owner untuk jadwal upload |
+| `SESSION_SECRET` | Penandatanganan sesi aplikasi |
+| `CRON_SECRET` | Proteksi recap harian |
+| `LEADERBOARD_*` | Konfigurasi recap, bila berbeda dari default |
+
+Nama/URL connection string Supabase final dan plan Vercel harus dikonfirmasi di
+dashboard masing-masing saat fase persiapan. Jangan menyalin nilai secret ke
+file plan ini.
+
+## 5. Kriteria selesai
+
+- Semua baris DB dan sequence tervalidasi terhadap snapshot VPS.
+- Semua media yang direferensikan DB punya object dengan checksum yang cocok.
+- Foto terjadwal tidak terlihat/dapat diakses lebih awal, dan queue tetap
+  menyimpan `channel_message_id` setelah berhasil diposting.
+- Tidak ada ketergantungan produksi pada disk permanen Function.
+- Webhook aman dari update duplikat dan jalur video berhasil di runtime target.
+- Cron yang aktif hanya recap leaderboard; scheduled upload tidak memakai cron.
+- Domain, bot, dan recap lolos smoke test; rollback host tetap bisa membaca DB
+  dan media yang sama.
+
+## 6. Catatan layanan
+
+- Supabase: [koneksi Postgres dan pooler](https://supabase.com/docs/guides/database/connecting-to-postgres), [backup](https://supabase.com/docs/guides/platform/backups), [Storage pricing](https://supabase.com/docs/guides/storage/pricing), [egress](https://supabase.com/docs/guides/storage/serving/bandwidth).
+- Vercel: [region Functions](https://vercel.com/docs/functions/configuring-functions/region), [batas Functions](https://vercel.com/docs/functions/limitations), [cron pricing/frequency](https://vercel.com/docs/cron-jobs/usage-and-pricing), [Hobby plan](https://vercel.com/docs/plans/hobby).
+- Tautan kebijakan/limit perlu dicek ulang tepat sebelum migrasi karena kuota dan paket dapat berubah.

@@ -47,8 +47,8 @@ import { CHANNEL_URL, channelConfigured, channelId, isChannelMember, ownerTelegr
 import {
   blurPhoto,
   blurredThumbnail,
-  mediaPath,
   mediaUrl,
+  readMedia,
   savePhoto,
   savePoster,
   saveVideo,
@@ -60,7 +60,6 @@ import {
   rewardClaimText,
   rewardNotEligibleText,
 } from "./format";
-import { enqueueUpload, removeQueued } from "./queue";
 import type { BotMessage, BotUpdate, InlineKeyboardMarkup } from "./types";
 import { extractPoster, extractTeaser, matchAspect, normalisePoster, type Poster } from "./video";
 
@@ -77,6 +76,56 @@ function appUrl(): string {
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function parseScheduledAtWib(input: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/.exec(input.trim());
+  if (!match) return null;
+
+  const [, yearText, monthText, dayText, hourText, minuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (year < 2000 || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) {
+    return null;
+  }
+
+  const timestamp = Date.UTC(year, month - 1, day, hour - 7, minute);
+  const local = new Date(timestamp + 7 * 60 * 60_000);
+  if (
+    local.getUTCFullYear() !== year ||
+    local.getUTCMonth() !== month - 1 ||
+    local.getUTCDate() !== day ||
+    local.getUTCHours() !== hour ||
+    local.getUTCMinutes() !== minute
+  ) {
+    return null;
+  }
+
+  const result = new Date(timestamp);
+  return result.getTime() > Date.now() ? result : null;
+}
+
+function formatWib(date: Date): string {
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "full",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  }).format(date) + " WIB";
+}
+
+function scheduleInputExample(): string {
+  const date = new Date(Date.now() + 2 * 24 * 60 * 60_000);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "0";
+  return value("year") + "-" + value("month") + "-" + value("day") + " 19:30";
 }
 
 /**
@@ -101,7 +150,7 @@ function confirmKeyboard(isOwner: boolean): InlineKeyboardMarkup {
     return {
       inline_keyboard: [
         [{ text: "✅ Upload sekarang", callback_data: "publish" }],
-        [{ text: "🕒 Masuk antrean", callback_data: "publish:queue" }],
+        [{ text: "🕒 Atur waktu tayang", callback_data: "publish:schedule" }],
         [{ text: "✕ Batal", callback_data: "cancel" }],
       ],
     };
@@ -159,8 +208,8 @@ export async function postToChannel(
   media: ChannelMedia,
   caption: string,
   isNsfw: boolean,
-): Promise<void> {
-  if (!channelConfigured()) return;
+): Promise<boolean> {
+  if (!channelConfigured()) return false;
 
   const options = {
     caption: channelCaption(caption),
@@ -180,12 +229,12 @@ export async function postToChannel(
     if (media.mediaType === "video") {
       // Prefer a short blurred clip: the motion tells the channel this is a
       // video, while the still cover looked like a blurred photo.
-      const videoPath = mediaPath(media.slug, "mp4");
+      const videoBytes = media.bytes ?? await readMedia(media.slug, "mp4");
       let teaser: Buffer | null = null;
 
-      if (videoPath) {
+      if (videoBytes) {
         try {
-          teaser = await extractTeaser(videoPath, { nsfw: isNsfw });
+          teaser = await extractTeaser(videoBytes, { nsfw: isNsfw });
         } catch (error) {
           console.error("[bot] channel teaser failed", error);
         }
@@ -255,8 +304,10 @@ export async function postToChannel(
     }
 
     await markChannelPost(photoId, message.message_id);
+    return true;
   } catch (error) {
     console.error("[bot] channel post failed", error);
+    return false;
   }
 }
 
@@ -356,7 +407,7 @@ function confirmText(
     "18+: <b>" + (isNsfw ? "Ya" : "Tidak") + "</b>",
     "",
     isOwner
-      ? "Upload sekarang, atau masukkan ke antrean supaya tayang otomatis nanti?"
+      ? "Upload sekarang, atau tentukan tanggal dan waktu tayangnya?"
       : "Upload sekarang? Konten akan muncul di feed dan bisa di-rating semua orang.",
   ].join("\n");
 }
@@ -908,6 +959,11 @@ async function handleText(message: BotMessage, user: TelegramUser): Promise<void
     return;
   }
 
+  if (session.step === "schedule") {
+    await handleScheduleText(chatId, user, text);
+    return;
+  }
+
   if (text.length === 0) {
     await sendMessage(chatId, "Caption tidak boleh kosong. Kirim teks untuk captionnya.");
     return;
@@ -947,6 +1003,7 @@ async function readySession(
   chatId: number,
   messageId: number,
   user: TelegramUser,
+  scheduled = false,
 ): Promise<UploadSession | null> {
   // A session can be older than the ban, so the final gate re-checks it.
   if (!(await canUpload(chatId, user.id))) {
@@ -964,7 +1021,9 @@ async function readySession(
     !session.imageWidth ||
     !session.imageHeight
   ) {
-    await editMessageCaption(chatId, messageId, "Sesi upload sudah tidak ada. Kirim /upload untuk mulai lagi.");
+    const message = "Sesi upload sudah tidak ada. Kirim /upload untuk mulai lagi.";
+    if (scheduled) await sendMessage(chatId, message);
+    else await editMessageCaption(chatId, messageId, message);
     return null;
   }
 
@@ -981,8 +1040,13 @@ async function readySession(
   return session;
 }
 
-async function publish(chatId: number, messageId: number, user: TelegramUser): Promise<void> {
-  const session = await readySession(chatId, messageId, user);
+async function publish(
+  chatId: number,
+  messageId: number,
+  user: TelegramUser,
+  scheduledAt: Date | null = null,
+): Promise<void> {
+  const session = await readySession(chatId, messageId, user, scheduledAt !== null);
   if (
     !session ||
     !session.fileId ||
@@ -1004,11 +1068,9 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
     const bytes = await downloadFile(file.file_path);
 
     if (session.mediaType === "video" && bytes.byteLength > MAX_VIDEO_BYTES) {
-      await editMessageCaption(
-        chatId,
-        messageId,
-        "Videonya lebih dari 20 MB. Kirim versi yang lebih kecil dengan /upload.",
-      );
+      const message = "Videonya lebih dari 20 MB. Kirim versi yang lebih kecil dengan /upload.";
+      if (scheduledAt) await sendMessage(chatId, message);
+      else await editMessageCaption(chatId, messageId, message);
       return;
     }
 
@@ -1060,12 +1122,13 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
       userId: owner.id,
       isNsfw,
       gender: session.gender,
+      scheduledAt,
     });
 
     await clearUploadSession(user.id);
 
     void recordEvent({
-      name: "upload_published",
+      name: scheduledAt ? "upload_scheduled" : "upload_published",
       telegramId: user.id,
       userId: owner.id,
       photoId,
@@ -1073,10 +1136,21 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
         media: session.mediaType,
         gender: session.gender,
         nsfw: isNsfw,
+        scheduledAt: scheduledAt?.toISOString() ?? null,
       },
     });
 
     const label = session.mediaType === "video" ? "Video" : "Foto";
+    if (scheduledAt) {
+      await sendMessage(
+        chatId,
+        "🕒 <b>" + label + " dijadwalkan.</b>\n\nTayang " + formatWib(scheduledAt) +
+          "\n\nCaption: <i>" + escapeHtml(session.caption) + "</i>",
+        { keyboard: openAppKeyboard() },
+      ).catch((error) => console.error("[bot] scheduled upload confirmation failed", error));
+      return;
+    }
+
     await editMessageCaption(
       chatId,
       messageId,
@@ -1102,109 +1176,59 @@ async function publish(chatId: number, messageId: number, user: TelegramUser): P
     // Owner tidak lagi dapat DM per upload: kurasi lewat halaman admin.
   } catch (error) {
     console.error("[bot] publish failed", error);
-    await editMessageCaption(chatId, messageId, "Gagal menyimpan konten. Kirim ulang dengan /upload.");
-  }
-}
-
-/** Preview of a queued upload for the owner, with a way to pull it back. */
-async function notifyQueued(
-  fileId: string,
-  mediaType: MediaType,
-  caption: string,
-  queueId: string,
-): Promise<void> {
-  const ownerId = ownerTelegramId();
-  if (ownerId === null) return;
-
-  const options = {
-    caption: "🕒 Antrean: " + escapeHtml(caption),
-    keyboard: { inline_keyboard: [[{ text: "Hapus dari antrean", callback_data: "qdel:" + queueId }]] },
-  };
-
-  try {
-    if (mediaType === "video") {
-      await sendVideo(ownerId, fileId, options);
+    if (scheduledAt) {
+      await sendMessage(chatId, "Gagal menjadwalkan konten. Kirim /upload untuk mencoba lagi.").catch(() => undefined);
     } else {
-      await sendPhoto(ownerId, fileId, options);
+      await editMessageCaption(chatId, messageId, "Gagal menyimpan konten. Kirim ulang dengan /upload.");
     }
-  } catch (error) {
-    console.error("[bot] queued notification failed", error);
   }
 }
 
-/**
- * Owner-only: park the upload in the inbox folder instead of publishing it.
- * scheduled-upload.ts picks it up on the next random slot, so the file gets the
- * same treatment as a manual inbox drop — no priority, one shared quota.
- */
-async function enqueue(chatId: number, messageId: number, user: TelegramUser): Promise<void> {
+async function askScheduledAt(chatId: number, messageId: number, user: TelegramUser): Promise<void> {
   if (user.id !== ownerTelegramId()) {
-    await editMessageCaption(chatId, messageId, "Antrean hanya untuk owner.");
+    await editMessageCaption(chatId, messageId, "Penjadwalan hanya untuk owner.");
     return;
   }
 
-  const session = await readySession(chatId, messageId, user);
-  if (!session || !session.fileId || !session.caption || session.gender === null) return;
-
-  try {
-    const file = await getFile(session.fileId);
-    if (!file.file_path) throw new Error("getFile returned no file_path");
-
-    const bytes = await downloadFile(file.file_path);
-
-    if (session.mediaType === "video" && bytes.byteLength > MAX_VIDEO_BYTES) {
-      await editMessageCaption(
-        chatId,
-        messageId,
-        "Videonya lebih dari 20 MB. Kirim versi yang lebih kecil dengan /upload.",
-      );
-      return;
-    }
-
-    const owner = await upsertUser({
-      telegramId: user.id,
-      firstName: user.first_name,
-      username: user.username,
-      lastName: user.last_name,
-      languageCode: user.language_code,
-    });
-
-    const queued = await enqueueUpload({
-      bytes,
-      caption: session.caption,
-      gender: session.gender,
-      isNsfw: session.isNsfw === true,
-      userId: owner.id,
-      telegramId: user.id,
-      mediaType: session.mediaType,
-    });
-
-    await clearUploadSession(user.id);
-
-    void recordEvent({
-      name: "upload_queued",
-      telegramId: user.id,
-      userId: owner.id,
-      meta: {
-        media: session.mediaType,
-        gender: session.gender,
-        nsfw: session.isNsfw === true,
-      },
-    });
-
-    await editMessageCaption(
-      chatId,
-      messageId,
-      "🕒 <b>Masuk antrean.</b>\n\nKonten tayang otomatis dalam beberapa jam.\n\nCaption: <i>" +
-        escapeHtml(session.caption) +
-        "</i>",
-    );
-
-    await notifyQueued(session.fileId, session.mediaType, session.caption, queued.id);
-  } catch (error) {
-    console.error("[bot] enqueue failed", error);
-    await editMessageCaption(chatId, messageId, "Gagal memasukkan ke antrean. Kirim ulang dengan /upload.");
+  const session = await getUploadSession(user.id);
+  if (!session || session.step !== "confirm" || !session.fileId || !session.caption) {
+    await editMessageCaption(chatId, messageId, "Sesi upload sudah tidak ada. Kirim /upload untuk mulai lagi.");
+    return;
   }
+
+  await saveUploadSession({ ...session, step: "schedule" });
+  await editMessageCaption(
+    chatId,
+    messageId,
+    "Kirim tanggal dan waktu tayang dalam WIB dengan format <code>YYYY-MM-DD HH:mm</code>.\n\nContoh: <code>" + scheduleInputExample() + "</code>\n\nKetik /batal untuk membatalkan.",
+  );
+}
+
+async function handleScheduleText(chatId: number, user: TelegramUser, text: string): Promise<void> {
+  if (user.id !== ownerTelegramId()) {
+    await clearUploadSession(user.id);
+    await sendMessage(chatId, "Penjadwalan hanya untuk owner.");
+    return;
+  }
+
+  const session = await getUploadSession(user.id);
+  if (!session || session.step !== "schedule" || !session.fileId || !session.caption) {
+    await sendMessage(chatId, "Sesi penjadwalan tidak ditemukan. Kirim /upload untuk mulai lagi.");
+    return;
+  }
+
+  const scheduledAt = parseScheduledAtWib(text);
+  if (!scheduledAt) {
+    await sendMessage(
+      chatId,
+      "Tanggal/waktu tidak valid atau sudah lewat. Kirim waktu mendatang dengan format <code>YYYY-MM-DD HH:mm</code> WIB, misalnya <code>" + scheduleInputExample() + "</code>.",
+    );
+    return;
+  }
+
+  await saveUploadSession({ ...session, step: "confirm" });
+  const notice = await sendMessage(chatId, "Menyimpan jadwal tayang " + formatWib(scheduledAt) + "…");
+  await publish(chatId, notice.message_id, user, scheduledAt);
 }
 
 async function handleCallback(update: BotUpdate): Promise<void> {
@@ -1213,25 +1237,6 @@ async function handleCallback(update: BotUpdate): Promise<void> {
 
   const chatId = query.message?.chat.id;
   const messageId = query.message?.message_id;
-
-  // Owner pulls a queued upload back out of the inbox folder.
-  if (query.data?.startsWith("qdel:")) {
-    if (query.from.id !== ownerTelegramId()) {
-      await answerCallbackQuery(query.id, "Bukan untuk kamu").catch(() => undefined);
-      return;
-    }
-
-    await answerCallbackQuery(query.id).catch(() => undefined);
-    if (chatId !== undefined && messageId !== undefined) {
-      const removed = await removeQueued(query.data.slice(5));
-      await editMessageCaption(
-        chatId,
-        messageId,
-        removed ? "Dihapus dari antrean." : "Antrean ini sudah tidak ada.",
-      ).catch(() => undefined);
-    }
-    return;
-  }
 
   // Stop the client-side spinner before doing any slow work.
   await answerCallbackQuery(query.id).catch(() => undefined);
@@ -1316,8 +1321,8 @@ async function handleCallback(update: BotUpdate): Promise<void> {
     return;
   }
 
-  if (query.data === "publish:queue") {
-    await enqueue(chatId, messageId, query.from);
+  if (query.data === "publish:schedule") {
+    await askScheduledAt(chatId, messageId, query.from);
     return;
   }
 
