@@ -1,7 +1,8 @@
 # Rencana migrasi RetPAP ke Vercel + Supabase
 
-Status: **rencana**. Belum ada data, environment, DNS, webhook, atau layanan
-produksi yang diubah untuk migrasi ini.
+Status: **preview paralel disiapkan; belum siap melayani pengguna**. VPS,
+domain, webhook Telegram, dan data produksi tidak diubah. Source ada di branch
+`codex/vercel-supabase-preview`; perubahan belum digabung ke `main`.
 
 Dokumen ini menggantikan rancangan migrasi sebelumnya. Rencana mengikuti alur
 aplikasi yang sekarang: upload melalui bot, jadwal posting owner disimpan di
@@ -19,8 +20,11 @@ Pemeriksaan read-only pada 2026-11-03:
 | Isi `photos` | 173 baris: 145 foto dan 28 video |
 | Status kirim channel | 21 `pending`, 3 `sent`, 149 `idle` |
 | Media di disk | 203 file, sekitar 138 MB; termasuk poster video |
-| Target Supabase | Project `RetPAP`, region `ap-northeast-1` (Tokyo), aktif, belum ada tabel `public` |
-| Target Vercel | Akses MCP terkonfirmasi pada akun plan Hobby dan team personal `ferdifirdev-6510`; team tidak memiliki project aktif yang dapat diakses. Ada tiga catatan deployment lama bernama `linkviu-web`, tetapi project detail-nya 404. Daftar domain Vercel kosong |
+| Target Supabase | Project `RetPAP`, region `ap-northeast-1` (Tokyo); 25 migrasi Drizzle dan bucket private `retpap-media` sudah diterapkan, belum ada data aplikasi |
+| Target Vercel | Team personal `ferdifirdev-6510`, plan Hobby; project `retpap-supabase-preview` sudah dibuat tanpa domain, tetapi GitHub integration belum terpasang sehingga repo/branch belum dapat dikaitkan atau dideploy |
+| Build preview | `npm run build` berhasil di lingkungan lokal |
+| Kredensial Preview | URL dan nama bucket sudah diisi; koneksi DB, service role, session, dan kredensial bot belum tersedia |
+| Keamanan Supabase | Advisor menemukan RLS nonaktif pada 17 tabel `public`; jangan buka preview/API sampai kebijakan akses ditetapkan |
 
 Angka VPS adalah baseline untuk rekonsiliasi, bukan hasil migrasi. Sebelum
 cutover, hitung ulang dan cocokkan setiap file ke slug/jenis media di DB.
@@ -51,11 +55,12 @@ ketentuan pemakaian akun sebelum memilih target produksi.
 
 ### Fase 0 — Verifikasi target dan persiapan
 
-1. Periksa project Vercel yang akan dipakai: Git repository/branch, plan, domain,
-   region Functions, Fluid Compute, dan environment Preview/Production.
-2. Periksa plan Supabase, compute, kuota, backup, dan connection string project
-   `RetPAP`. Project ini masih kosong sehingga tidak ada tabel target yang perlu
-   dipertahankan.
+1. Project Vercel terpisah sudah dibuat. Hubungkan GitHub integration, lalu
+   set production branch project ini ke `codex/vercel-supabase-preview`; jangan
+   menautkan domain produksi.
+2. Project `RetPAP` di Tokyo sudah berisi skema hasil migrasi, tanpa data
+   produksi. Periksa plan, compute, kuota, backup, dan siapkan connection string
+   runtime/direct.
 3. Pastikan DNS dan kepemilikan `bot.linkviu.my.id`; catat konfigurasi webhook
    Telegram sekarang tanpa mengubahnya.
 4. Buat manifest sumber: daftar semua slug, ekstensi, ukuran, checksum, dan
@@ -63,12 +68,13 @@ ketentuan pemakaian akun sebelum memilih target produksi.
 5. Simpan dump PostgreSQL terenkripsi di luar VPS dan salinan media terverifikasi
    sebelum migrasi.
 
-**Gerbang lanjut:** biaya/plan diketahui, akses Vercel terverifikasi, backup bisa
-dibaca, dan semua file DB punya file sumber yang cocok.
+**Gerbang lanjut:** GitHub integration terpasang, RLS/policies ditetapkan,
+kredensial Preview aman, biaya/plan diketahui, backup bisa dibaca, dan manifest
+file cocok.
 
 ### Fase 1 — Siapkan Supabase Database
 
-1. Terapkan migrasi Drizzle yang ada ke project Supabase kosong.
+1. Selesai: 25 migrasi Drizzle diterapkan ke project Supabase kosong.
 2. Ubah koneksi migrasi agar memakai koneksi direct Supabase. Jangan menjalankan
    DDL melalui transaction pooler.
 3. Uji koneksi runtime melalui Supavisor transaction pooler. Turunkan pool
@@ -86,13 +92,13 @@ gagal, kosongkan target yang masih non-produksi dan ulangi restore.
 
 ### Fase 2 — Pindahkan media dan hilangkan ketergantungan disk lokal
 
-1. Buat bucket private `retpap-media` dengan pembatasan tipe dan ukuran sesuai
-   batas aplikasi.
+1. Selesai: bucket private `retpap-media` dibuat; batas 50 MB dan tipe JPEG/MP4.
 2. Salin semua object dengan key deterministik `<slug>.jpg` atau `<slug>.mp4`;
    poster video disimpan sebagai `<slug>.jpg`. Simpan manifest sumber dan hasil.
 3. Verifikasi jumlah, ukuran total, checksum unduh, semua path yang dirujuk DB,
    dan tidak adanya object yatim. Jangan hapus `/var/lib/retpap/uploads`.
-4. Tambahkan adapter media berbasis object storage. Ganti pemakaian filesystem
+4. Selesai di branch preview: adapter media berbasis object storage mengganti
+   pemakaian filesystem
    produksi pada `media.ts`, route `/media/[slug]`, repost admin, scheduled
    channel post, gambar drawing/channel, dan admin actions.
 5. Pertahankan `/media/<slug>` sebagai pemeriksaan akses server-side: cek bahwa
@@ -114,11 +120,8 @@ tidak kehilangan akses media.
    key ke `NEXT_PUBLIC_*` atau menyimpan secret dalam repo.
 2. Set runtime database ke Node.js Functions dan region dekat Supabase. Uji
    koneksi dari function, termasuk jumlah koneksi saat request paralel.
-3. Uji bundling `sharp`, `ffmpeg`, dan `ffprobe` di Vercel. Kode sekarang
-   memanggil binary sistem `ffmpeg`/`ffprobe`; VPS menyediakannya, Vercel tidak.
-   Pilih binary yang bisa dibundel untuk runtime/arsitektur target atau pindahkan
-   proses video ke worker terpisah sebelum cutover. Jangan menganggap build sukses
-   berarti binary berhasil berjalan.
+3. Build lokal Vercel-compatible berhasil; `ffmpeg-static` ditambahkan untuk
+   runtime. Tetap verifikasi ekstraksi video setelah deploy preview.
 4. Periksa jalur webhook yang sekarang memproses update secara inline. Tambahkan
    idempotensi `update_id` dan pastikan pekerjaan berat tidak membuat Telegram
    mengirim update berulang atau pekerjaan terputus saat Function berakhir.
